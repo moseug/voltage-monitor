@@ -1,4 +1,4 @@
-name: Collect Voltage Data
+name: Collect Voltage Data with Puppeteer
 
 on:
   schedule:
@@ -18,139 +18,205 @@ jobs:
         with:
           node-version: '18'
           
-      - name: Collect voltage data
+      - name: Install Puppeteer
+        run: |
+          npm install puppeteer
+          
+      - name: Collect voltage data with browser automation
         run: |
           node << 'EOF'
-          const https = require('https');
-          const http = require('http');
+          const puppeteer = require('puppeteer');
           const fs = require('fs');
-          const url = require('url');
           
-          const STABILIZER_URL = 'http://46.44.56.179:8080/home.stm';
+          const STABILIZER_URL = 'http://46.44.56.179:8080';
           const USERNAME = 'user';
           const PASSWORD = 'password';
           
-          function fetchData() {
-            return new Promise((resolve, reject) => {
-              const auth = Buffer.from(`${USERNAME}:${PASSWORD}`).toString('base64');
-              const parsedUrl = url.parse(STABILIZER_URL);
-              
-              const options = {
-                hostname: parsedUrl.hostname,
-                port: parsedUrl.port || 80,
-                path: parsedUrl.path || '/',
-                method: 'GET',
-                headers: {
-                  'Authorization': `Basic ${auth}`
-                }
-              };
-              
-              const client = parsedUrl.protocol === 'https:' ? https : http;
-              
-              const req = client.request(options, (res) => {
-                let data = '';
-                
-                res.on('data', (chunk) => {
-                  data += chunk;
-                });
-                
-                res.on('end', () => {
-                  resolve(data);
-                });
-              });
-              
-              req.on('error', (error) => {
-                reject(error);
-              });
-              
-              req.setTimeout(10000, () => {
-                req.abort();
-                reject(new Error('Timeout'));
-              });
-              
-              req.end();
-            });
-          }
-          
-          function parseVoltage(html) {
-            console.log('HTML length:', html.length);
-            console.log('First 2000 characters of HTML:');
-            console.log(html.substring(0, 2000));
-            console.log('---END OF HTML SAMPLE---');
+          async function collectData() {
+            let browser;
             
-            const match = html.match(/(\d+\.?\d*)\s*\/\s*(\d+\.?\d*)\s*\/\s*(\d+\.?\d*)/);
-            
-            if (match) {
-              const values = [
-                parseFloat(match[1]),
-                parseFloat(match[2]),
-                parseFloat(match[3])
-              ];
-              
-              if (values.every(v => v >= 180 && v <= 260)) {
-                return {
-                  phaseA: values[0],
-                  phaseB: values[1],
-                  phaseC: values[2],
-                  timestamp: new Date().toISOString()
-                };
-              }
-            }
-            
-            return null;
-          }
-          
-          async function main() {
             try {
-              console.log('Fetching data from stabilizer...');
-              const html = await fetchData();
+              console.log('Launching browser...');
               
-              console.log('Parsing voltage data...');
-              const voltageData = parseVoltage(html);
+              browser = await puppeteer.launch({
+                headless: 'new',
+                args: [
+                  '--no-sandbox',
+                  '--disable-setuid-sandbox',
+                  '--disable-dev-shm-usage',
+                  '--disable-gpu'
+                ]
+              });
+              
+              const page = await browser.newPage();
+              
+              // Устанавливаем User-Agent
+              await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+              
+              console.log('Navigating to stabilizer...');
+              await page.goto(STABILIZER_URL, { 
+                waitUntil: 'networkidle0',
+                timeout: 30000 
+              });
+              
+              console.log('Page loaded, checking for login form...');
+              
+              // Ждём появления формы авторизации или проверяем, что уже авторизованы
+              await page.waitForTimeout(2000);
+              
+              // Проверяем, есть ли форма авторизации
+              const loginForm = await page.$('input[name="username"], input[name="user"]');
+              
+              if (loginForm) {
+                console.log('Login form found, entering credentials...');
+                
+                // Пробуем разные варианты полей
+                const usernameField = await page.$('input[name="username"]') || await page.$('input[name="user"]');
+                const passwordField = await page.$('input[name="password"]') || await page.$('input[name="pass"]');
+                
+                if (usernameField && passwordField) {
+                  await usernameField.type(USERNAME);
+                  await passwordField.type(PASSWORD);
+                  
+                  console.log('Submitting login form...');
+                  
+                  // Ищем кнопку входа
+                  const submitButton = await page.$('input[type="submit"]') || 
+                                      await page.$('button[type="submit"]') ||
+                                      await page.$('a.button');
+                  
+                  if (submitButton) {
+                    await Promise.all([
+                      page.waitForNavigation({ waitUntil: 'networkidle0', timeout: 10000 }).catch(() => {}),
+                      submitButton.click()
+                    ]);
+                  }
+                  
+                  await page.waitForTimeout(3000);
+                  console.log('Login submitted');
+                }
+              }
+              
+              // Переходим на страницу с данными (если ещё не на ней)
+              const currentUrl = page.url();
+              if (!currentUrl.includes('home.stm')) {
+                console.log('Navigating to home.stm...');
+                await page.goto(STABILIZER_URL + '/home.stm', {
+                  waitUntil: 'networkidle0',
+                  timeout: 30000
+                });
+              }
+              
+              console.log('On data page, extracting voltage...');
+              await page.waitForTimeout(2000);
+              
+              // Извлекаем данные о напряжении
+              const voltageData = await page.evaluate(() => {
+                // Пробуем найти элемент с id="input-voltage"
+                const voltageElement = document.getElementById('input-voltage');
+                
+                if (voltageElement) {
+                  const text = voltageElement.textContent.trim();
+                  console.log('Found voltage element:', text);
+                  
+                  // Парсим "216.8 / 223.6 / 213.7"
+                  const match = text.match(/(\d+\.?\d*)\s*\/\s*(\d+\.?\d*)\s*\/\s*(\d+\.?\d*)/);
+                  
+                  if (match) {
+                    return {
+                      phaseA: parseFloat(match[1]),
+                      phaseB: parseFloat(match[2]),
+                      phaseC: parseFloat(match[3])
+                    };
+                  }
+                }
+                
+                // Если не нашли, ищем по всей странице
+                const bodyText = document.body.innerText;
+                const match = bodyText.match(/(\d+\.?\d*)\s*\/\s*(\d+\.?\d*)\s*\/\s*(\d+\.?\d*)/);
+                
+                if (match) {
+                  const values = [parseFloat(match[1]), parseFloat(match[2]), parseFloat(match[3])];
+                  
+                  // Проверяем, что значения в разумном диапазоне
+                  if (values.every(v => v >= 180 && v <= 260)) {
+                    return {
+                      phaseA: values[0],
+                      phaseB: values[1],
+                      phaseC: values[2]
+                    };
+                  }
+                }
+                
+                return null;
+              });
               
               if (!voltageData) {
-                throw new Error('Could not parse voltage data from HTML');
+                // Делаем скриншот для отладки
+                await page.screenshot({ path: 'debug-screenshot.png' });
+                console.log('Screenshot saved for debugging');
+                
+                // Получаем HTML страницы
+                const html = await page.content();
+                console.log('Page HTML length:', html.length);
+                console.log('Page HTML preview:', html.substring(0, 1000));
+                
+                throw new Error('Could not find voltage data on page');
               }
               
-              console.log('Voltage data:', voltageData);
+              console.log('Voltage data extracted:', voltageData);
               
-              let history = [];
-              if (fs.existsSync('data/voltage-history.json')) {
-                const content = fs.readFileSync('data/voltage-history.json', 'utf8');
-                history = JSON.parse(content);
-              }
+              // Добавляем timestamp
+              voltageData.timestamp = new Date().toISOString();
               
-              history.push(voltageData);
+              // Сохраняем данные
+              await saveData(voltageData);
               
-              const maxRecords = 672;
-              if (history.length > maxRecords) {
-                history = history.slice(-maxRecords);
-              }
-              
-              if (!fs.existsSync('data')) {
-                fs.mkdirSync('data');
-              }
-              
-              fs.writeFileSync(
-                'data/voltage-history.json',
-                JSON.stringify(history, null, 2)
-              );
-              
-              fs.writeFileSync(
-                'data/latest.json',
-                JSON.stringify(voltageData, null, 2)
-              );
-              
-              console.log('Data saved successfully!');
-              console.log(`Total records: ${history.length}`);
+              console.log('Data collection completed successfully!');
               
             } catch (error) {
-              console.error('Error:', error.message);
-              process.exit(1);
+              console.error('Error during data collection:', error);
+              throw error;
+            } finally {
+              if (browser) {
+                await browser.close();
+              }
             }
           }
           
-          main();
+          async function saveData(voltageData) {
+            // Создаём директорию data если её нет
+            if (!fs.existsSync('data')) {
+              fs.mkdirSync('data');
+            }
+            
+            // Сохраняем последнее значение
+            fs.writeFileSync('data/latest.json', JSON.stringify(voltageData, null, 2));
+            
+            // Читаем историю
+            let history = [];
+            if (fs.existsSync('data/voltage-history.json')) {
+              const content = fs.readFileSync('data/voltage-history.json', 'utf8');
+              history = JSON.parse(content);
+            }
+            
+            // Добавляем новую запись
+            history.push(voltageData);
+            
+            // Храним данные за последние 7 дней (672 записи)
+            const maxRecords = 672;
+            if (history.length > maxRecords) {
+              history = history.slice(-maxRecords);
+            }
+            
+            // Сохраняем историю
+            fs.writeFileSync('data/voltage-history.json', JSON.stringify(history, null, 2));
+            
+            console.log('Data saved. Total records:', history.length);
+          }
+          
+          // Запускаем сбор данных
+          collectData();
           EOF
           
       - name: Commit and push changes
