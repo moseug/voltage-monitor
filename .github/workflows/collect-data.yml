@@ -106,7 +106,13 @@ jobs:
               console.log('Fetching data from stabilizer...');
               const html = await fetchData();
               
-              console.log('Parsing voltage data...');
+console.log('Parsing voltage data...');
+              console.log('HTML length:', html.length);
+              console.log('First 2000 characters of HTML:');
+              console.log(html.substring(0, 2000));
+              console.log('---END OF HTML SAMPLE---');
+              
+              const voltageData = parseVoltage(html);
               const voltageData = parseVoltage(html);
               
               if (!voltageData) {
