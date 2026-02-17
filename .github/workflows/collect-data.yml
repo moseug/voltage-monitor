@@ -26,7 +26,7 @@ jobs:
           const fs = require('fs');
           const url = require('url');
           
-          const STABILIZER_URL = 'http://46.44.56.179:8080';
+          const STABILIZER_URL = 'http://46.44.56.179:8080/home.stm';
           const USERNAME = 'user';
           const PASSWORD = 'password';
           
