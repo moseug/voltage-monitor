@@ -234,13 +234,6 @@
             margin-bottom: 15px;
         }
         
-        .loading {
-            text-align: center;
-            padding: 20px;
-            color: #667eea;
-            font-size: 1.2em;
-        }
-        
         .error {
             background: #f8d7da;
             color: #721c24;
@@ -273,7 +266,7 @@
     <div class="container">
         <div class="header">
             <h1>⚡ Мониторинг напряжения электросети</h1>
-            <p>Трехфазная система · Автоматическое обновление</p>
+            <p>Трехфазная система · Автоматическое обновление каждые 15 минут</p>
         </div>
         
         <div class="last-update" id="last-update">Загрузка данных...</div>
@@ -283,28 +276,19 @@
         <div class="cards">
             <div class="card">
                 <div class="card-title">Фаза A</div>
-                <div class="voltage-value" id="phase-a">
-                    <span class="loading">—</span>
-                    <span class="voltage-unit">В</span>
-                </div>
+                <div class="voltage-value" id="phase-a">—<span class="voltage-unit">В</span></div>
                 <span class="status" id="status-a">Загрузка...</span>
             </div>
             
             <div class="card">
                 <div class="card-title">Фаза B</div>
-                <div class="voltage-value" id="phase-b">
-                    <span class="loading">—</span>
-                    <span class="voltage-unit">В</span>
-                </div>
+                <div class="voltage-value" id="phase-b">—<span class="voltage-unit">В</span></div>
                 <span class="status" id="status-b">Загрузка...</span>
             </div>
             
             <div class="card">
                 <div class="card-title">Фаза C</div>
-                <div class="voltage-value" id="phase-c">
-                    <span class="loading">—</span>
-                    <span class="voltage-unit">В</span>
-                </div>
+                <div class="voltage-value" id="phase-c">—<span class="voltage-unit">В</span></div>
                 <span class="status" id="status-c">Загрузка...</span>
             </div>
         </div>
@@ -462,6 +446,9 @@
             try {
                 // Загружаем последние данные
                 const latestResponse = await fetch('data/latest.json');
+                if (!latestResponse.ok) {
+                    throw new Error('Не удалось загрузить latest.json');
+                }
                 const latest = await latestResponse.json();
                 
                 updateDisplay(latest);
@@ -473,6 +460,9 @@
                 
                 // Загружаем историю
                 const historyResponse = await fetch('data/voltage-history.json');
+                if (!historyResponse.ok) {
+                    throw new Error('Не удалось загрузить voltage-history.json');
+                }
                 voltageHistory = await historyResponse.json();
                 
                 updateChart();
