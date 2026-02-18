@@ -88,12 +88,12 @@ jobs:
               
               console.log('Login form found:', !!loginForm);
               
+              // Если форма найдена - заполняем
               if (loginForm) {
                 console.log('Login form found, entering credentials...');
                 
-                // Пробуем разные варианты полей
-                const usernameField = await page.$('input[name="username"]') || await page.$('input[name="user"]');
-                const passwordField = await page.$('input[name="password"]') || await page.$('input[name="pass"]');
+                const usernameField = await page.$('input[name="username"]') || await page.$('input[name="user"]') || await page.$('input[type="text"]');
+                const passwordField = await page.$('input[name="password"]') || await page.$('input[name="pass"]') || await page.$('input[type="password"]');
                 
                 if (usernameField && passwordField) {
                   await usernameField.type(USERNAME);
@@ -101,7 +101,6 @@ jobs:
                   
                   console.log('Submitting login form...');
                   
-                  // Ищем кнопку входа
                   const submitButton = await page.$('input[type="submit"]') || 
                                       await page.$('button[type="submit"]') ||
                                       await page.$('a.button');
@@ -116,25 +115,35 @@ jobs:
                   await new Promise(resolve => setTimeout(resolve, 3000));
                   console.log('Login submitted');
                 }
+              } else {
+                console.log('No login form found - assuming already authenticated or no auth required');
               }
               
-              // Переходим на страницу с данными (если ещё не на ней)
+              // Переходим на страницу с данными
               console.log('Current URL:', page.url());
               
               // Ждём, пока загрузятся данные
               await new Promise(resolve => setTimeout(resolve, 3000));
               
-              // Если после авторизации не попали на home.stm, идём туда
-              if (!page.url().includes('home.stm')) {
-                console.log('Navigating to home.stm...');
+              // Пробуем кликнуть на ссылку "Главная" в меню, если она есть
+              const homeLink = await page.$('a[href="home.stm"]');
+              if (homeLink) {
+                console.log('Clicking on home.stm link...');
+                await Promise.all([
+                  page.waitForNavigation({ waitUntil: 'networkidle0', timeout: 10000 }).catch(() => {}),
+                  homeLink.click()
+                ]);
+                await new Promise(resolve => setTimeout(resolve, 2000));
+              } else if (!page.url().includes('home.stm')) {
+                console.log('Trying direct navigation to home.stm...');
                 try {
                   await page.goto(STABILIZER_URL + '/home.stm', {
-                    waitUntil: 'networkidle0',
+                    waitUntil: 'domcontentloaded',
                     timeout: 10000
                   });
-                  await new Promise(resolve => setTimeout(resolve, 2000));
+                  await new Promise(resolve => setTimeout(resolve, 3000));
                 } catch (e) {
-                  console.log('Navigation to home.stm failed, trying to extract from current page...');
+                  console.log('Direct navigation failed:', e.message);
                 }
               }
               
