@@ -62,7 +62,7 @@ jobs:
               console.log('Page loaded, checking for login form...');
               
               // Ждём появления формы авторизации или проверяем, что уже авторизованы
-              await page.waitForTimeout(2000);
+              await new Promise(resolve => setTimeout(resolve, 2000));
               
               // Проверяем, есть ли форма авторизации
               const loginForm = await page.$('input[name="username"], input[name="user"]');
@@ -92,7 +92,7 @@ jobs:
                     ]);
                   }
                   
-                  await page.waitForTimeout(3000);
+                  await new Promise(resolve => setTimeout(resolve, 3000));
                   console.log('Login submitted');
                 }
               }
@@ -108,7 +108,7 @@ jobs:
               }
               
               console.log('On data page, extracting voltage...');
-              await page.waitForTimeout(2000);
+              await new Promise(resolve => setTimeout(resolve, 2000));
               
               // Извлекаем данные о напряжении
               const voltageData = await page.evaluate(() => {
