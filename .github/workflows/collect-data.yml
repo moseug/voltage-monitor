@@ -71,11 +71,22 @@ jobs:
               
               console.log('Page loaded, checking for login form...');
               
+              // Делаем скриншот для отладки
+              await page.screenshot({ path: 'login-page.png' });
+              console.log('Screenshot saved');
+              
+              // Получаем HTML страницы
+              const pageHTML = await page.content();
+              console.log('Page HTML length:', pageHTML.length);
+              console.log('Page HTML preview:', pageHTML.substring(0, 500));
+              
               // Ждём появления формы авторизации или проверяем, что уже авторизованы
               await new Promise(resolve => setTimeout(resolve, 2000));
               
               // Проверяем, есть ли форма авторизации
-              const loginForm = await page.$('input[name="username"], input[name="user"]');
+              const loginForm = await page.$('input[name="username"], input[name="user"], input[type="text"]');
+              
+              console.log('Login form found:', !!loginForm);
               
               if (loginForm) {
                 console.log('Login form found, entering credentials...');
@@ -108,13 +119,23 @@ jobs:
               }
               
               // Переходим на страницу с данными (если ещё не на ней)
-              const currentUrl = page.url();
-              if (!currentUrl.includes('home.stm')) {
+              console.log('Current URL:', page.url());
+              
+              // Ждём, пока загрузятся данные
+              await new Promise(resolve => setTimeout(resolve, 3000));
+              
+              // Если после авторизации не попали на home.stm, идём туда
+              if (!page.url().includes('home.stm')) {
                 console.log('Navigating to home.stm...');
-                await page.goto(STABILIZER_URL + '/home.stm', {
-                  waitUntil: 'networkidle0',
-                  timeout: 30000
-                });
+                try {
+                  await page.goto(STABILIZER_URL + '/home.stm', {
+                    waitUntil: 'networkidle0',
+                    timeout: 10000
+                  });
+                  await new Promise(resolve => setTimeout(resolve, 2000));
+                } catch (e) {
+                  console.log('Navigation to home.stm failed, trying to extract from current page...');
+                }
               }
               
               console.log('On data page, extracting voltage...');
