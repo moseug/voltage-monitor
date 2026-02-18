@@ -50,102 +50,29 @@ jobs:
               
               const page = await browser.newPage();
               
+              // Настраиваем Basic Auth для автоматической авторизации
+              await page.authenticate({
+                username: USERNAME,
+                password: PASSWORD
+              });
+              
               // Устанавливаем User-Agent
               await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
               
-              console.log('Navigating to stabilizer...');
+              console.log('Navigating directly to home.stm with authentication...');
+              await page.goto(STABILIZER_URL + '/home.stm', { 
+                waitUntil: 'networkidle0',
+                timeout: 30000 
+              });
               
-              // Сначала идём на главную страницу (landing/login)
-              try {
-                await page.goto(STABILIZER_URL, { 
-                  waitUntil: 'networkidle0',
-                  timeout: 30000 
-                });
-              } catch (e) {
-                // Если главная не открылась, пробуем landing.htm
-                await page.goto(STABILIZER_URL + '/landing.htm', { 
-                  waitUntil: 'networkidle0',
-                  timeout: 30000 
-                });
-              }
+              console.log('Page loaded successfully!');
               
-              console.log('Page loaded, checking for login form...');
-              
-              // Делаем скриншот для отладки
-              await page.screenshot({ path: 'login-page.png' });
+              // Делаем скриншот
+              await page.screenshot({ path: 'home-page.png' });
               console.log('Screenshot saved');
               
-              // Получаем HTML страницы
-              const pageHTML = await page.content();
-              console.log('Page HTML length:', pageHTML.length);
-              console.log('Page HTML preview:', pageHTML.substring(0, 500));
-              
-              // Ждём появления формы авторизации или проверяем, что уже авторизованы
-              await new Promise(resolve => setTimeout(resolve, 2000));
-              
-              // Проверяем, есть ли форма авторизации
-              const loginForm = await page.$('input[name="username"], input[name="user"], input[type="text"]');
-              
-              console.log('Login form found:', !!loginForm);
-              
-              // Если форма найдена - заполняем
-              if (loginForm) {
-                console.log('Login form found, entering credentials...');
-                
-                const usernameField = await page.$('input[name="username"]') || await page.$('input[name="user"]') || await page.$('input[type="text"]');
-                const passwordField = await page.$('input[name="password"]') || await page.$('input[name="pass"]') || await page.$('input[type="password"]');
-                
-                if (usernameField && passwordField) {
-                  await usernameField.type(USERNAME);
-                  await passwordField.type(PASSWORD);
-                  
-                  console.log('Submitting login form...');
-                  
-                  const submitButton = await page.$('input[type="submit"]') || 
-                                      await page.$('button[type="submit"]') ||
-                                      await page.$('a.button');
-                  
-                  if (submitButton) {
-                    await Promise.all([
-                      page.waitForNavigation({ waitUntil: 'networkidle0', timeout: 10000 }).catch(() => {}),
-                      submitButton.click()
-                    ]);
-                  }
-                  
-                  await new Promise(resolve => setTimeout(resolve, 3000));
-                  console.log('Login submitted');
-                }
-              } else {
-                console.log('No login form found - assuming already authenticated or no auth required');
-              }
-              
-              // Переходим на страницу с данными
-              console.log('Current URL:', page.url());
-              
-              // Ждём, пока загрузятся данные
+              // Ждём загрузки JavaScript данных
               await new Promise(resolve => setTimeout(resolve, 3000));
-              
-              // Пробуем кликнуть на ссылку "Главная" в меню, если она есть
-              const homeLink = await page.$('a[href="home.stm"]');
-              if (homeLink) {
-                console.log('Clicking on home.stm link...');
-                await Promise.all([
-                  page.waitForNavigation({ waitUntil: 'networkidle0', timeout: 10000 }).catch(() => {}),
-                  homeLink.click()
-                ]);
-                await new Promise(resolve => setTimeout(resolve, 2000));
-              } else if (!page.url().includes('home.stm')) {
-                console.log('Trying direct navigation to home.stm...');
-                try {
-                  await page.goto(STABILIZER_URL + '/home.stm', {
-                    waitUntil: 'domcontentloaded',
-                    timeout: 10000
-                  });
-                  await new Promise(resolve => setTimeout(resolve, 3000));
-                } catch (e) {
-                  console.log('Direct navigation failed:', e.message);
-                }
-              }
               
               console.log('On data page, extracting voltage...');
               await new Promise(resolve => setTimeout(resolve, 2000));
