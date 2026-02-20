@@ -2,194 +2,48 @@ name: Collect Voltage Data with Puppeteer
 
 on:
   schedule:
-    - cron: '*/15 * * * *'
+    - cron: '*/5 * * * *'
   workflow_dispatch:
 
 jobs:
   collect:
     runs-on: ubuntu-latest
-    
+
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
-        
+        uses: actions/checkout@v4
+
       - name: Setup Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
-          node-version: '18'
-          
-      - name: Install Puppeteer
-        run: |
-          npm install puppeteer
-          
-      - name: Collect voltage data with browser automation
-        run: |
-          node << 'EOF'
-          const puppeteer = require('puppeteer');
-          const fs = require('fs');
-          
-          const STABILIZER_URL = 'http://46.44.56.179:8080';
-          const USERNAME = 'user';
-          const PASSWORD = 'password';
-          
-          async function collectData() {
-            let browser;
-            
-            try {
-              console.log('Launching browser...');
-              
-              browser = await puppeteer.launch({
-                headless: 'new',
-                args: [
-                  '--no-sandbox',
-                  '--disable-setuid-sandbox',
-                  '--disable-dev-shm-usage',
-                  '--disable-gpu'
-                ]
-              });
-              
-              const page = await browser.newPage();
-              
-              // Настраиваем Basic Auth для автоматической авторизации
-              await page.authenticate({
-                username: USERNAME,
-                password: PASSWORD
-              });
-              
-              // Устанавливаем User-Agent
-              await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
-              
-              console.log('Navigating directly to home.stm with authentication...');
-              await page.goto(STABILIZER_URL + '/home.stm', { 
-                waitUntil: 'networkidle0',
-                timeout: 30000 
-              });
-              
-              console.log('Page loaded successfully!');
-              
-              // Делаем скриншот
-              await page.screenshot({ path: 'home-page.png' });
-              console.log('Screenshot saved');
-              
-              // Ждём загрузки JavaScript данных
-              await new Promise(resolve => setTimeout(resolve, 3000));
-              
-              console.log('On data page, extracting voltage...');
-              await new Promise(resolve => setTimeout(resolve, 2000));
-              
-              // Извлекаем данные о напряжении
-              const voltageData = await page.evaluate(() => {
-                // Пробуем найти элемент с id="input-voltage"
-                const voltageElement = document.getElementById('input-voltage');
-                
-                if (voltageElement) {
-                  const text = voltageElement.textContent.trim();
-                  console.log('Found voltage element:', text);
-                  
-                  // Парсим "216.8 / 223.6 / 213.7"
-                  const match = text.match(/(\d+\.?\d*)\s*\/\s*(\d+\.?\d*)\s*\/\s*(\d+\.?\d*)/);
-                  
-                  if (match) {
-                    return {
-                      phaseA: parseFloat(match[1]),
-                      phaseB: parseFloat(match[2]),
-                      phaseC: parseFloat(match[3])
-                    };
-                  }
-                }
-                
-                // Если не нашли, ищем по всей странице
-                const bodyText = document.body.innerText;
-                const match = bodyText.match(/(\d+\.?\d*)\s*\/\s*(\d+\.?\d*)\s*\/\s*(\d+\.?\d*)/);
-                
-                if (match) {
-                  const values = [parseFloat(match[1]), parseFloat(match[2]), parseFloat(match[3])];
-                  
-                  // Проверяем, что значения в разумном диапазоне
-                  if (values.every(v => v >= 180 && v <= 260)) {
-                    return {
-                      phaseA: values[0],
-                      phaseB: values[1],
-                      phaseC: values[2]
-                    };
-                  }
-                }
-                
-                return null;
-              });
-              
-              if (!voltageData) {
-                // Делаем скриншот для отладки
-                await page.screenshot({ path: 'debug-screenshot.png' });
-                console.log('Screenshot saved for debugging');
-                
-                // Получаем HTML страницы
-                const html = await page.content();
-                console.log('Page HTML length:', html.length);
-                console.log('Page HTML preview:', html.substring(0, 1000));
-                
-                throw new Error('Could not find voltage data on page');
-              }
-              
-              console.log('Voltage data extracted:', voltageData);
-              
-              // Добавляем timestamp
-              voltageData.timestamp = new Date().toISOString();
-              
-              // Сохраняем данные
-              await saveData(voltageData);
-              
-              console.log('Data collection completed successfully!');
-              
-            } catch (error) {
-              console.error('Error during data collection:', error);
-              throw error;
-            } finally {
-              if (browser) {
-                await browser.close();
-              }
-            }
-          }
-          
-          async function saveData(voltageData) {
-            // Создаём директорию data если её нет
-            if (!fs.existsSync('data')) {
-              fs.mkdirSync('data');
-            }
-            
-            // Сохраняем последнее значение
-            fs.writeFileSync('data/latest.json', JSON.stringify(voltageData, null, 2));
-            
-            // Читаем историю
-            let history = [];
-            if (fs.existsSync('data/voltage-history.json')) {
-              const content = fs.readFileSync('data/voltage-history.json', 'utf8');
-              history = JSON.parse(content);
-            }
-            
-            // Добавляем новую запись
-            history.push(voltageData);
-            
-            // Храним данные за последние 7 дней (672 записи)
-            const maxRecords = 672;
-            if (history.length > maxRecords) {
-              history = history.slice(-maxRecords);
-            }
-            
-            // Сохраняем историю
-            fs.writeFileSync('data/voltage-history.json', JSON.stringify(history, null, 2));
-            
-            console.log('Data saved. Total records:', history.length);
-          }
-          
-          // Запускаем сбор данных
-          collectData();
-          EOF
-          
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Collect voltage data
+        env:
+          STABILIZER_URL: ${{ secrets.STABILIZER_URL }}
+          STABILIZER_USER: ${{ secrets.STABILIZER_USER }}
+          STABILIZER_PASSWORD: ${{ secrets.STABILIZER_PASSWORD }}
+        run: node collect.js
+
+      - name: Upload debug screenshot on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-screenshot
+          path: |
+            home-page.png
+            debug-screenshot.png
+          retention-days: 3
+
       - name: Commit and push changes
         run: |
           git config --local user.email "github-actions[bot]@users.noreply.github.com"
           git config --local user.name "github-actions[bot]"
           git add data/
-          git diff --staged --quiet || git commit -m "Update voltage data - $(date)"
+          git diff --staged --quiet || git commit -m "Update voltage data - $(date -u '+%Y-%m-%d %H:%M UTC')"
+          git pull --rebase origin main
           git push
