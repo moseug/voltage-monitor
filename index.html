@@ -63,17 +63,17 @@
         .chart-controls { display: flex; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 10px; }
 
         .period-btn {
-            padding: 8px 20px; border: 2px solid #795548; background: white;
-            color: #795548; border-radius: 8px; cursor: pointer;
+            padding: 8px 20px; border: 2px solid #111; background: white;
+            color: #111; border-radius: 8px; cursor: pointer;
             font-weight: 600; transition: all 0.3s ease;
         }
-        .period-btn:hover, .period-btn.active { background: #795548; color: white; }
+        .period-btn:hover, .period-btn.active { background: #111; color: white; }
 
         .custom-period {
             display: none; align-items: center; gap: 10px;
             flex-wrap: wrap; margin-bottom: 15px;
         }
-        .custom-period label { color: #555; font-weight: 600; }
+        .custom-period label { color: #111; font-weight: 600; }
         .custom-period input[type="date"] {
             padding: 6px 10px; border: 2px solid #ccc;
             border-radius: 8px; font-size: 0.95em;
@@ -209,34 +209,56 @@
 
     function initChart() {
         const ctx = document.getElementById('voltageChart').getContext('2d');
+
+        // Плагин для цветных зон фона
+        const bgZones = {
+            id: 'bgZones',
+            beforeDraw(chart) {
+                const { ctx, chartArea: { left, right, top, bottom }, scales: { y } } = chart;
+                if (!y) return;
+
+                const y198 = y.getPixelForValue(198);
+                const y242 = y.getPixelForValue(242);
+                const yTop = y.getPixelForValue(y.max);
+                const yBot = y.getPixelForValue(y.min);
+
+                ctx.save();
+                // Красная зона верх (выше 242)
+                ctx.fillStyle = 'rgba(255, 100, 100, 0.08)';
+                ctx.fillRect(left, yTop, right - left, y242 - yTop);
+                // Зелёная зона (198–242)
+                ctx.fillStyle = 'rgba(100, 200, 100, 0.08)';
+                ctx.fillRect(left, y242, right - left, y198 - y242);
+                // Красная зона низ (ниже 198)
+                ctx.fillStyle = 'rgba(255, 100, 100, 0.08)';
+                ctx.fillRect(left, y198, right - left, yBot - y198);
+                ctx.restore();
+            }
+        };
+
         chart = new Chart(ctx, {
             type: 'line',
             data: {
                 labels: [],
                 datasets: [
                     {
-                        label: 'Фаза A',
-                        data: [],
-                        borderColor: '#795548',
-                        backgroundColor: 'rgba(121, 85, 72, 0.1)',
+                        label: 'Фаза A', data: [],
+                        borderColor: '#795548', backgroundColor: 'transparent',
                         tension: 0.4, borderWidth: 2, pointRadius: 0
                     },
                     {
-                        label: 'Фаза B',
-                        data: [],
-                        borderColor: '#111111',
-                        backgroundColor: 'rgba(17, 17, 17, 0.1)',
+                        label: 'Фаза B', data: [],
+                        borderColor: '#111111', backgroundColor: 'transparent',
                         tension: 0.4, borderWidth: 2, pointRadius: 0
                     },
                     {
-                        label: 'Фаза C',
-                        data: [],
-                        borderColor: '#888888',
-                        backgroundColor: 'rgba(136, 136, 136, 0.1)',
+                        label: 'Фаза C', data: [],
+                        borderColor: '#888888', backgroundColor: 'transparent',
                         tension: 0.4, borderWidth: 2, pointRadius: 0
                     }
                 ]
             },
+            plugins: [bgZones],
             options: {
                 responsive: true,
                 maintainAspectRatio: true,
@@ -247,8 +269,7 @@
                 },
                 scales: {
                     y: {
-                        beginAtZero: false,
-                        min: 190, max: 270,
+                        min: 170, max: 270,
                         grid: { color: 'rgba(0,0,0,0.05)' },
                         ticks: { callback: v => v + ' В' }
                     },
@@ -299,62 +320,140 @@
         else                                   { el.classList.add('danger');  el.textContent = 'Опасно!'; }
     }
 
-    function getRange(key) {
-        const now = new Date();
-        const sod = d => { const s = new Date(d); s.setHours(0,0,0,0); return s; };
-
-        if (key === 'today') {
-            return { from: sod(now), to: now, fmt: 'time' };
-        }
-        if (key === 'yesterday') {
-            const y = new Date(now); y.setDate(y.getDate() - 1);
-            const yEnd = new Date(sod(now) - 1);
-            return { from: sod(y), to: yEnd, fmt: 'time' };
-        }
-        if (key === 'week') {
-            const w = new Date(now); w.setDate(w.getDate() - 6);
-            return { from: sod(w), to: now, fmt: 'datetime' };
-        }
-        if (key === 'month') {
-            const m = new Date(now); m.setDate(m.getDate() - 29);
-            return { from: sod(m), to: now, fmt: 'date' };
-        }
-        return null;
-    }
-
-    function formatTime(date, fmt) {
-        if (fmt === 'time')     return date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-        if (fmt === 'datetime') return date.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })
-                                     + ' ' + date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
-        return date.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' });
-    }
+    const DAY_NAMES = ['Вс','Пн','Вт','Ср','Чт','Пт','Сб'];
 
     function updateChart() {
-        let range;
+        let range, buildLabels;
+
+        if (currentPeriodKey === 'today' || currentPeriodKey === 'yesterday') {
+            // Сутки: бакеты по часам 1..24, данные усредняем по часу
+            let dayStart;
+            if (currentPeriodKey === 'today') {
+                dayStart = new Date(); dayStart.setHours(0,0,0,0);
+            } else {
+                dayStart = new Date(); dayStart.setDate(dayStart.getDate()-1); dayStart.setHours(0,0,0,0);
+            }
+
+            // Создаём 24 бакета (часы 0–23, подпись 1–24)
+            const buckets = Array.from({length: 24}, () => ({ a:[], b:[], c:[] }));
+            voltageHistory.forEach(r => {
+                const t = new Date(r.timestamp);
+                const h = t.getHours();
+                const dayOfRecord = new Date(t); dayOfRecord.setHours(0,0,0,0);
+                if (dayOfRecord.getTime() === dayStart.getTime()) {
+                    buckets[h].a.push(r.phaseA);
+                    buckets[h].b.push(r.phaseB);
+                    buckets[h].c.push(r.phaseC);
+                }
+            });
+
+            const labels = [], dA = [], dB = [], dC = [];
+            buckets.forEach((b, i) => {
+                labels.push(String(i + 1));
+                dA.push(b.a.length ? avg(b.a) : null);
+                dB.push(b.b.length ? avg(b.b) : null);
+                dC.push(b.c.length ? avg(b.c) : null);
+            });
+            setChartData(labels, dA, dB, dC);
+            return;
+        }
+
+        if (currentPeriodKey === 'week') {
+            // 7 дней: бакеты по дням, подпись Пн/Вт/...
+            const today = new Date(); today.setHours(0,0,0,0);
+            const buckets = Array.from({length: 7}, (_, i) => {
+                const d = new Date(today); d.setDate(d.getDate() - (6 - i));
+                return { date: d, a:[], b:[], c:[] };
+            });
+            voltageHistory.forEach(r => {
+                const t = new Date(r.timestamp);
+                const dayKey = new Date(t); dayKey.setHours(0,0,0,0);
+                const bk = buckets.find(b => b.date.getTime() === dayKey.getTime());
+                if (bk) { bk.a.push(r.phaseA); bk.b.push(r.phaseB); bk.c.push(r.phaseC); }
+            });
+            const labels = buckets.map(b => DAY_NAMES[b.date.getDay()]);
+            const dA = buckets.map(b => b.a.length ? avg(b.a) : null);
+            const dB = buckets.map(b => b.b.length ? avg(b.b) : null);
+            const dC = buckets.map(b => b.c.length ? avg(b.c) : null);
+            setChartData(labels, dA, dB, dC);
+            return;
+        }
+
+        if (currentPeriodKey === 'month') {
+            // Текущий месяц от 1-го до последнего числа
+            const now = new Date();
+            const year = now.getFullYear(), month = now.getMonth();
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+            const buckets = Array.from({length: daysInMonth}, (_, i) => {
+                const d = new Date(year, month, i + 1);
+                return { date: d, a:[], b:[], c:[] };
+            });
+            voltageHistory.forEach(r => {
+                const t = new Date(r.timestamp);
+                if (t.getFullYear() === year && t.getMonth() === month) {
+                    const idx = t.getDate() - 1;
+                    buckets[idx].a.push(r.phaseA);
+                    buckets[idx].b.push(r.phaseB);
+                    buckets[idx].c.push(r.phaseC);
+                }
+            });
+            const labels = buckets.map(b => String(b.date.getDate()));
+            const dA = buckets.map(b => b.a.length ? avg(b.a) : null);
+            const dB = buckets.map(b => b.b.length ? avg(b.b) : null);
+            const dC = buckets.map(b => b.c.length ? avg(b.c) : null);
+            setChartData(labels, dA, dB, dC);
+            return;
+        }
 
         if (currentPeriodKey === 'custom') {
             const fromVal = document.getElementById('date-from').value;
             const toVal   = document.getElementById('date-to').value;
             if (!fromVal || !toVal) return;
             const from = new Date(fromVal);
-            const to   = new Date(toVal); to.setHours(23, 59, 59, 999);
-            const days = (to - from) / 86400000;
-            range = { from, to, fmt: days <= 1 ? 'time' : days <= 7 ? 'datetime' : 'date' };
-        } else {
-            range = getRange(currentPeriodKey);
-        }
+            const to   = new Date(toVal); to.setHours(23,59,59,999);
+            const days = Math.round((to - from) / 86400000) + 1;
 
-        const labels = [], dA = [], dB = [], dC = [];
-        voltageHistory.forEach(r => {
-            const t = new Date(r.timestamp);
-            if (t >= range.from && t <= range.to) {
-                labels.push(formatTime(t, range.fmt));
-                dA.push(r.phaseA);
-                dB.push(r.phaseB);
-                dC.push(r.phaseC);
+            if (days <= 1) {
+                // Один день — 24 часа
+                const buckets = Array.from({length: 24}, () => ({ a:[], b:[], c:[] }));
+                voltageHistory.forEach(r => {
+                    const t = new Date(r.timestamp);
+                    if (t >= from && t <= to) buckets[t.getHours()].a.push(r.phaseA) || buckets[t.getHours()].b.push(r.phaseB) || buckets[t.getHours()].c.push(r.phaseC);
+                });
+                // упрощённый вариант для custom 1 день
+                const labels = [], dA = [], dB = [], dC = [];
+                voltageHistory.forEach(r => {
+                    const t = new Date(r.timestamp);
+                    if (t >= from && t <= to) {
+                        labels.push(t.toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'}));
+                        dA.push(r.phaseA); dB.push(r.phaseB); dC.push(r.phaseC);
+                    }
+                });
+                setChartData(labels, dA, dB, dC);
+            } else {
+                // Несколько дней — по датам
+                const buckets = [];
+                for (let i = 0; i < days; i++) {
+                    const d = new Date(from); d.setDate(d.getDate() + i);
+                    buckets.push({ date: d, a:[], b:[], c:[] });
+                }
+                voltageHistory.forEach(r => {
+                    const t = new Date(r.timestamp);
+                    if (t >= from && t <= to) {
+                        const dayKey = new Date(t); dayKey.setHours(0,0,0,0);
+                        const bk = buckets.find(b => { const bd = new Date(b.date); bd.setHours(0,0,0,0); return bd.getTime() === dayKey.getTime(); });
+                        if (bk) { bk.a.push(r.phaseA); bk.b.push(r.phaseB); bk.c.push(r.phaseC); }
+                    }
+                });
+                const labels = buckets.map(b => b.date.toLocaleDateString('ru-RU', {day:'2-digit', month:'2-digit'}));
+                setChartData(labels, buckets.map(b => b.a.length ? avg(b.a) : null), buckets.map(b => b.b.length ? avg(b.b) : null), buckets.map(b => b.c.length ? avg(b.c) : null));
             }
-        });
+        }
+    }
 
+    function avg(arr) { return arr.reduce((s, v) => s + v, 0) / arr.length; }
+
+    function setChartData(labels, dA, dB, dC) {
         chart.data.labels = labels;
         chart.data.datasets[0].data = dA;
         chart.data.datasets[1].data = dB;
