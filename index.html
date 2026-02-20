@@ -334,13 +334,13 @@
                 dayStart = new Date(); dayStart.setDate(dayStart.getDate()-1); dayStart.setHours(0,0,0,0);
             }
 
-            // Создаём 24 бакета (часы 0–23, подпись 1–24)
-            const buckets = Array.from({length: 24}, () => ({ a:[], b:[], c:[] }));
+            // Создаём 25 бакетов (подписи 0..24, данные часа i попадают в бакет i)
+            const buckets = Array.from({length: 25}, () => ({ a:[], b:[], c:[] }));
             voltageHistory.forEach(r => {
                 const t = new Date(r.timestamp);
-                const h = t.getHours();
                 const dayOfRecord = new Date(t); dayOfRecord.setHours(0,0,0,0);
                 if (dayOfRecord.getTime() === dayStart.getTime()) {
+                    const h = t.getHours(); // час 0..23 → бакет 0..23; бакет 24 пустой (полночь следующего)
                     buckets[h].a.push(r.phaseA);
                     buckets[h].b.push(r.phaseB);
                     buckets[h].c.push(r.phaseC);
@@ -349,7 +349,7 @@
 
             const labels = [], dA = [], dB = [], dC = [];
             buckets.forEach((b, i) => {
-                labels.push(String(i + 1));
+                labels.push(String(i));
                 dA.push(b.a.length ? avg(b.a) : null);
                 dB.push(b.b.length ? avg(b.b) : null);
                 dC.push(b.c.length ? avg(b.c) : null);
@@ -359,19 +359,27 @@
         }
 
         if (currentPeriodKey === 'week') {
-            // 7 дней: бакеты по дням, подпись Пн/Вт/...
+            // 7 дней: Пн–Вс текущей недели (или последние 7 дней начиная с Пн)
             const today = new Date(); today.setHours(0,0,0,0);
+            // Найдём ближайший прошедший понедельник
+            const dayOfWeek = today.getDay(); // 0=Вс,1=Пн,...,6=Сб
+            const diffToMon = (dayOfWeek === 0) ? 6 : dayOfWeek - 1;
+            const monday = new Date(today); monday.setDate(today.getDate() - diffToMon);
+
+            const DAY_LABELS = ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'];
             const buckets = Array.from({length: 7}, (_, i) => {
-                const d = new Date(today); d.setDate(d.getDate() - (6 - i));
-                return { date: d, a:[], b:[], c:[] };
+                const d = new Date(monday); d.setDate(monday.getDate() + i);
+                return { date: d, label: DAY_LABELS[i], a:[], b:[], c:[] };
             });
+
             voltageHistory.forEach(r => {
                 const t = new Date(r.timestamp);
                 const dayKey = new Date(t); dayKey.setHours(0,0,0,0);
                 const bk = buckets.find(b => b.date.getTime() === dayKey.getTime());
                 if (bk) { bk.a.push(r.phaseA); bk.b.push(r.phaseB); bk.c.push(r.phaseC); }
             });
-            const labels = buckets.map(b => DAY_NAMES[b.date.getDay()]);
+
+            const labels = buckets.map(b => b.label);
             const dA = buckets.map(b => b.a.length ? avg(b.a) : null);
             const dB = buckets.map(b => b.b.length ? avg(b.b) : null);
             const dC = buckets.map(b => b.c.length ? avg(b.c) : null);
@@ -380,14 +388,13 @@
         }
 
         if (currentPeriodKey === 'month') {
-            // Текущий месяц от 1-го до последнего числа
+            // Текущий месяц: ровно столько бакетов, сколько дней в месяце
             const now = new Date();
             const year = now.getFullYear(), month = now.getMonth();
             const daysInMonth = new Date(year, month + 1, 0).getDate();
-            const buckets = Array.from({length: daysInMonth}, (_, i) => {
-                const d = new Date(year, month, i + 1);
-                return { date: d, a:[], b:[], c:[] };
-            });
+            const buckets = Array.from({length: daysInMonth}, (_, i) => ({
+                date: new Date(year, month, i + 1), a:[], b:[], c:[]
+            }));
             voltageHistory.forEach(r => {
                 const t = new Date(r.timestamp);
                 if (t.getFullYear() === year && t.getMonth() === month) {
@@ -397,6 +404,7 @@
                     buckets[idx].c.push(r.phaseC);
                 }
             });
+            // Подписи: только числа (1..daysInMonth), бакетов ровно daysInMonth
             const labels = buckets.map(b => String(b.date.getDate()));
             const dA = buckets.map(b => b.a.length ? avg(b.a) : null);
             const dB = buckets.map(b => b.b.length ? avg(b.b) : null);
