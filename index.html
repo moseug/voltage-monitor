@@ -310,7 +310,7 @@
             const t = new Date(r.timestamp);
             if (t >= from && t <= to) {
                 if (timeFmt === 'time') {
-                    labels.push(t.toLocaleTimeString('ru-RU', {hour: '2-digit', minute: '2-digit'}));
+                    labels.push(t.getHours());
                 } else {
                     labels.push(t.toLocaleDateString('ru-RU', {day: '2-digit', month: '2-digit'})
                         + ' ' + t.toLocaleTimeString('ru-RU', {hour: '2-digit', minute: '2-digit'}));
