@@ -334,13 +334,13 @@
                 dayStart = new Date(); dayStart.setDate(dayStart.getDate()-1); dayStart.setHours(0,0,0,0);
             }
 
-            // Создаём 25 бакетов (подписи 0..24, данные часа i попадают в бакет i)
-            const buckets = Array.from({length: 25}, () => ({ a:[], b:[], c:[] }));
+            // 24 бакета: час 0..23, подпись 0..23
+            const buckets = Array.from({length: 24}, () => ({ a:[], b:[], c:[] }));
             voltageHistory.forEach(r => {
                 const t = new Date(r.timestamp);
                 const dayOfRecord = new Date(t); dayOfRecord.setHours(0,0,0,0);
                 if (dayOfRecord.getTime() === dayStart.getTime()) {
-                    const h = t.getHours(); // час 0..23 → бакет 0..23; бакет 24 пустой (полночь следующего)
+                    const h = t.getHours();
                     buckets[h].a.push(r.phaseA);
                     buckets[h].b.push(r.phaseB);
                     buckets[h].c.push(r.phaseC);
@@ -359,56 +359,42 @@
         }
 
         if (currentPeriodKey === 'week') {
-            // 7 дней: Пн–Вс текущей недели (или последние 7 дней начиная с Пн)
             const today = new Date(); today.setHours(0,0,0,0);
-            // Найдём ближайший прошедший понедельник
-            const dayOfWeek = today.getDay(); // 0=Вс,1=Пн,...,6=Сб
+            const dayOfWeek = today.getDay();
             const diffToMon = (dayOfWeek === 0) ? 6 : dayOfWeek - 1;
             const monday = new Date(today); monday.setDate(today.getDate() - diffToMon);
+            const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6); sunday.setHours(23,59,59,999);
 
             const DAY_LABELS = ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'];
-            const buckets = Array.from({length: 7}, (_, i) => {
-                const d = new Date(monday); d.setDate(monday.getDate() + i);
-                return { date: d, label: DAY_LABELS[i], a:[], b:[], c:[] };
-            });
-
+            const labels = [], dA = [], dB = [], dC = [];
             voltageHistory.forEach(r => {
                 const t = new Date(r.timestamp);
-                const dayKey = new Date(t); dayKey.setHours(0,0,0,0);
-                const bk = buckets.find(b => b.date.getTime() === dayKey.getTime());
-                if (bk) { bk.a.push(r.phaseA); bk.b.push(r.phaseB); bk.c.push(r.phaseC); }
+                if (t >= monday && t <= sunday) {
+                    const dow = t.getDay();
+                    const idx = (dow === 0) ? 6 : dow - 1;
+                    const time = t.toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'});
+                    labels.push(DAY_LABELS[idx] + ' ' + time);
+                    dA.push(r.phaseA); dB.push(r.phaseB); dC.push(r.phaseC);
+                }
             });
-
-            const labels = buckets.map(b => b.label);
-            const dA = buckets.map(b => b.a.length ? avg(b.a) : null);
-            const dB = buckets.map(b => b.b.length ? avg(b.b) : null);
-            const dC = buckets.map(b => b.c.length ? avg(b.c) : null);
             setChartData(labels, dA, dB, dC);
             return;
         }
 
         if (currentPeriodKey === 'month') {
-            // Текущий месяц: ровно столько бакетов, сколько дней в месяце
             const now = new Date();
             const year = now.getFullYear(), month = now.getMonth();
-            const daysInMonth = new Date(year, month + 1, 0).getDate();
-            const buckets = Array.from({length: daysInMonth}, (_, i) => ({
-                date: new Date(year, month, i + 1), a:[], b:[], c:[]
-            }));
+            const from = new Date(year, month, 1);
+            const to   = new Date(year, month + 1, 0); to.setHours(23,59,59,999);
+
+            const labels = [], dA = [], dB = [], dC = [];
             voltageHistory.forEach(r => {
                 const t = new Date(r.timestamp);
-                if (t.getFullYear() === year && t.getMonth() === month) {
-                    const idx = t.getDate() - 1;
-                    buckets[idx].a.push(r.phaseA);
-                    buckets[idx].b.push(r.phaseB);
-                    buckets[idx].c.push(r.phaseC);
+                if (t >= from && t <= to) {
+                    labels.push(t.getDate() + ' ' + t.toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'}));
+                    dA.push(r.phaseA); dB.push(r.phaseB); dC.push(r.phaseC);
                 }
             });
-            // Подписи: только числа (1..daysInMonth), бакетов ровно daysInMonth
-            const labels = buckets.map(b => String(b.date.getDate()));
-            const dA = buckets.map(b => b.a.length ? avg(b.a) : null);
-            const dB = buckets.map(b => b.b.length ? avg(b.b) : null);
-            const dC = buckets.map(b => b.c.length ? avg(b.c) : null);
             setChartData(labels, dA, dB, dC);
             return;
         }
