@@ -232,9 +232,9 @@
             data: {
                 labels: [],
                 datasets: [
-                    { label: 'Фаза A', data: [], borderColor: '#795548', backgroundColor: 'transparent', tension: 0, borderWidth: 2, pointRadius: 0, showLine: true },
-                    { label: 'Фаза B', data: [], borderColor: '#111111', backgroundColor: 'transparent', tension: 0, borderWidth: 2, pointRadius: 0, showLine: true },
-                    { label: 'Фаза C', data: [], borderColor: '#888888', backgroundColor: 'transparent', tension: 0, borderWidth: 2, pointRadius: 0, showLine: true }
+                    { label: 'Фаза A', data: [], borderColor: '#795548', backgroundColor: 'transparent', tension: 0, borderWidth: 2, pointRadius: 0 },
+                    { label: 'Фаза B', data: [], borderColor: '#111111', backgroundColor: 'transparent', tension: 0, borderWidth: 2, pointRadius: 0 },
+                    { label: 'Фаза C', data: [], borderColor: '#888888', backgroundColor: 'transparent', tension: 0, borderWidth: 2, pointRadius: 0 }
                 ]
             },
             plugins: [bgZones],
@@ -253,12 +253,10 @@
                         ticks: { callback: v => v + ' В' }
                     },
                     x: {
-                        type: 'linear',
-                        min: 0, max: 24,
                         grid: { color: 'rgba(0,0,0,0.05)' },
                         ticks: {
-                            stepSize: 1,
-                            callback: v => Number.isInteger(v) ? v : ''
+                            maxTicksLimit: 24,
+                            maxRotation: 0
                         }
                     }
                 }
@@ -305,12 +303,18 @@
         else                                   { el.classList.add('danger');  el.textContent = 'Опасно!'; }
     }
 
-    function filterHistory(from, to) {
+    // Единая функция фильтрации — никакого усреднения, каждая точка = реальное измерение
+    function filterHistory(from, to, timeFmt) {
         const labels = [], dA = [], dB = [], dC = [];
         voltageHistory.forEach(r => {
             const t = new Date(r.timestamp);
             if (t >= from && t <= to) {
-                labels.push(t.toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'}));
+                if (timeFmt === 'time') {
+                    labels.push(t.toLocaleTimeString('ru-RU', {hour: '2-digit', minute: '2-digit'}));
+                } else {
+                    labels.push(t.toLocaleDateString('ru-RU', {day: '2-digit', month: '2-digit'})
+                        + ' ' + t.toLocaleTimeString('ru-RU', {hour: '2-digit', minute: '2-digit'}));
+                }
                 dA.push(r.phaseA);
                 dB.push(r.phaseB);
                 dC.push(r.phaseC);
@@ -319,23 +323,22 @@
         setChartData(labels, dA, dB, dC);
     }
 
-    // Для Сегодня/Вчера: 24 точки по часам (последнее измерение в каждом часе)
-
     function updateChart() {
         const now = new Date();
 
         if (currentPeriodKey === 'today') {
-        const from = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
-        const to   = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
-        filterHistory(from, to);
-        return;
+            const from = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
+            const to   = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
+            filterHistory(from, to, 'time');
+            return;
         }
 
         if (currentPeriodKey === 'yesterday') {
-        const from = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
-        const to   = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
-        filterHistory(from, to);
-        return;
+            const yest = new Date(now); yest.setDate(yest.getDate() - 1);
+            const from = new Date(yest.getFullYear(), yest.getMonth(), yest.getDate(), 0, 0, 0);
+            const to   = new Date(yest.getFullYear(), yest.getMonth(), yest.getDate(), 23, 59, 59);
+            filterHistory(from, to, 'time');
+            return;
         }
 
         if (currentPeriodKey === 'week') {
@@ -343,14 +346,14 @@
             const diffToMon = (dow === 0) ? 6 : dow - 1;
             const from = new Date(now.getFullYear(), now.getMonth(), now.getDate() - diffToMon, 0, 0, 0);
             const to   = new Date(from); to.setDate(from.getDate() + 6); to.setHours(23, 59, 59);
-            filterHistory(from, to);
+            filterHistory(from, to, 'datetime');
             return;
         }
 
         if (currentPeriodKey === 'month') {
             const from = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0);
             const to   = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
-            filterHistory(from, to);
+            filterHistory(from, to, 'datetime');
             return;
         }
 
@@ -362,7 +365,7 @@
             const [ty, tm, td] = toVal.split('-').map(Number);
             const from = new Date(fy, fm - 1, fd, 0, 0, 0);
             const to   = new Date(ty, tm - 1, td, 23, 59, 59);
-            filterHistory(from, to);
+            filterHistory(from, to, 'datetime');
         }
     }
 
