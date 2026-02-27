@@ -374,7 +374,25 @@
             xAxis.ticks = { stepSize: 1, callback: v => Number.isInteger(v) ? v : '' };
         } else {
             xAxis.type = 'category'; xAxis.min = undefined; xAxis.max = undefined;
-            xAxis.ticks = { maxRotation: 0, autoSkip: true, maxTicksLimit: 15 };
+            if (currentPeriodKey === 'week') {
+                const DAY_NAMES = ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'];
+                xAxis.ticks = {
+                    maxRotation: 0,
+                    callback: function(val, idx) {
+                        const label = this.getLabelForValue(val);
+                        const day = label ? label.split(' ')[0] : '';
+                        // Показываем метку только для первой точки каждого дня
+                        if (DAY_NAMES.includes(day)) {
+                            const prev = idx > 0 ? this.getLabelForValue(idx - 1) : '';
+                            const prevDay = prev ? prev.split(' ')[0] : '';
+                            return day !== prevDay ? day : '';
+                        }
+                        return '';
+                    }
+                };
+            } else {
+                xAxis.ticks = { maxRotation: 0, autoSkip: true, maxTicksLimit: 15 };
+            }
         }
 
         if (currentPeriodKey === 'today') {
@@ -395,9 +413,30 @@
         if (currentPeriodKey === 'week') {
             const dow = now.getDay();
             const diffToMon = (dow === 0) ? 6 : dow - 1;
-            const from = new Date(now.getFullYear(), now.getMonth(), now.getDate() - diffToMon, 0, 0, 0);
-            const to   = new Date(from); to.setDate(from.getDate() + 6); to.setHours(23, 59, 59);
-            filterHistory(from, to, 'datetime');
+            const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - diffToMon, 0, 0, 0);
+            const DAY_NAMES = ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'];
+
+            const labels = [], dA = [], dB = [], dC = [];
+            for (let d = 0; d < 7; d++) {
+                const dayStart = new Date(monday); dayStart.setDate(monday.getDate() + d);
+                const dayEnd   = new Date(dayStart); dayEnd.setHours(23, 59, 59);
+                const dayRecs  = voltageHistory.filter(r => {
+                    const t = new Date(r.timestamp);
+                    return t >= dayStart && t <= dayEnd;
+                });
+                if (dayRecs.length > 0) {
+                    dayRecs.forEach(r => {
+                        const t = new Date(r.timestamp);
+                        labels.push(DAY_NAMES[d] + ' ' + t.toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'}));
+                        dA.push(r.phaseA); dB.push(r.phaseB); dC.push(r.phaseC);
+                    });
+                } else {
+                    // День без данных — добавляем пустую точку чтобы метка присутствовала
+                    labels.push(DAY_NAMES[d] + ' 00:00');
+                    dA.push(null); dB.push(null); dC.push(null);
+                }
+            }
+            setChartData(labels, dA, dB, dC);
             return;
         }
 
