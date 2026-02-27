@@ -251,11 +251,21 @@
                             title: function(items) {
                                 if (!items.length) return '';
                                 const isTimeAxis = currentPeriodKey === 'today' || currentPeriodKey === 'yesterday';
+                                const isWeekAxis = currentPeriodKey === 'week';
+                                const DAY_NAMES = ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'];
                                 if (isTimeAxis) {
                                     const num = items[0].parsed.x;
                                     const h = Math.floor(num);
                                     const m = Math.round((num - h) * 60);
                                     return String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0');
+                                }
+                                if (isWeekAxis) {
+                                    const num = items[0].parsed.x;
+                                    const d = Math.floor(num);
+                                    const frac = num - d;
+                                    const h = Math.floor(frac * 24);
+                                    const m = Math.round((frac * 24 - h) * 60);
+                                    return DAY_NAMES[d] + ' ' + String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0');
                                 }
                                 return items[0].label;
                             }
@@ -416,25 +426,28 @@
             const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - diffToMon, 0, 0, 0);
             const DAY_NAMES = ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'];
 
-            const labels = [], dA = [], dB = [], dC = [];
-            for (let d = 0; d < 7; d++) {
-                const dayStart = new Date(monday); dayStart.setDate(monday.getDate() + d);
-                const dayEnd   = new Date(dayStart); dayEnd.setHours(23, 59, 59);
-                // Метка для начала каждого дня — всегда все 7
-                labels.push(DAY_NAMES[d]);
-                dA.push(null); dB.push(null); dC.push(null);
-                // Данные только до текущего момента
-                const dayRecs = voltageHistory.filter(r => {
-                    const t = new Date(r.timestamp);
-                    return t >= dayStart && t <= dayEnd && t <= now;
-                });
-                dayRecs.forEach(r => {
-                    const t = new Date(r.timestamp);
-                    labels.push(DAY_NAMES[d] + ' ' + t.toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'}));
-                    dA.push(r.phaseA); dB.push(r.phaseB); dC.push(r.phaseC);
-                });
-            }
-            setChartData(labels, dA, dB, dC);
+            xAxis.type = 'linear'; xAxis.min = 0; xAxis.max = 7;
+            xAxis.ticks = {
+                stepSize: 1,
+                callback: v => Number.isInteger(v) && v < 7 ? DAY_NAMES[v] : ''
+            };
+
+            const dA = [], dB = [], dC = [];
+            voltageHistory.forEach(r => {
+                const t = new Date(r.timestamp);
+                if (t >= monday && t <= now) {
+                    const d = Math.floor((t - monday) / 86400000);
+                    const x = d + (t.getHours() * 60 + t.getMinutes()) / 1440;
+                    dA.push({x, y: r.phaseA});
+                    dB.push({x, y: r.phaseB});
+                    dC.push({x, y: r.phaseC});
+                }
+            });
+            chart.data.labels = [];
+            chart.data.datasets[0].data = dA;
+            chart.data.datasets[1].data = dB;
+            chart.data.datasets[2].data = dC;
+            chart.update();
             return;
         }
 
