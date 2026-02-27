@@ -420,21 +420,19 @@
             for (let d = 0; d < 7; d++) {
                 const dayStart = new Date(monday); dayStart.setDate(monday.getDate() + d);
                 const dayEnd   = new Date(dayStart); dayEnd.setHours(23, 59, 59);
-                const dayRecs  = voltageHistory.filter(r => {
+                // Метка для начала каждого дня — всегда все 7
+                labels.push(DAY_NAMES[d]);
+                dA.push(null); dB.push(null); dC.push(null);
+                // Данные только до текущего момента
+                const dayRecs = voltageHistory.filter(r => {
                     const t = new Date(r.timestamp);
-                    return t >= dayStart && t <= dayEnd;
+                    return t >= dayStart && t <= dayEnd && t <= now;
                 });
-                if (dayRecs.length > 0) {
-                    dayRecs.forEach(r => {
-                        const t = new Date(r.timestamp);
-                        labels.push(DAY_NAMES[d] + ' ' + t.toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'}));
-                        dA.push(r.phaseA); dB.push(r.phaseB); dC.push(r.phaseC);
-                    });
-                } else {
-                    // День без данных — добавляем пустую точку чтобы метка присутствовала
-                    labels.push(DAY_NAMES[d] + ' 00:00');
-                    dA.push(null); dB.push(null); dC.push(null);
-                }
+                dayRecs.forEach(r => {
+                    const t = new Date(r.timestamp);
+                    labels.push(DAY_NAMES[d] + ' ' + t.toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'}));
+                    dA.push(r.phaseA); dB.push(r.phaseB); dC.push(r.phaseC);
+                });
             }
             setChartData(labels, dA, dB, dC);
             return;
