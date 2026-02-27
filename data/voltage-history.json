@@ -1,11 +1,5 @@
 [
   {
-    "phaseA": 222.4,
-    "phaseB": 224.4,
-    "phaseC": 221.6,
-    "timestamp": "2026-02-21T00:30:40.665Z"
-  },
-  {
     "phaseA": 221.6,
     "phaseB": 226.6,
     "phaseC": 222,
@@ -12094,5 +12088,11 @@
     "phaseB": 229,
     "phaseC": 217.8,
     "timestamp": "2026-02-27T20:55:30.757Z"
+  },
+  {
+    "phaseA": 226,
+    "phaseB": 230.7,
+    "phaseC": 221,
+    "timestamp": "2026-02-27T20:56:55.212Z"
   }
 ]
