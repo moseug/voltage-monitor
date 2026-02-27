@@ -354,6 +354,9 @@
                 dB.push(b.b.length ? avg(b.b) : null);
                 dC.push(b.c.length ? avg(b.c) : null);
             });
+            // Добавляем точку 24 = данные часа 23, чтобы получить 24 отрезка
+            labels.push('24');
+            dA.push(dA[23]); dB.push(dB[23]); dC.push(dC[23]);
             setChartData(labels, dA, dB, dC);
             return;
         }
