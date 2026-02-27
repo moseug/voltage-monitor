@@ -312,39 +312,21 @@
         setChartData(labels, dA, dB, dC);
     }
 
-    // Для Сегодня/Вчера: 24 точки по часам (последнее измерение в каждом часе)
-    function filterByHours(dateRef) {
-        const labels = [], dA = [], dB = [], dC = [];
-        for (let h = 0; h < 24; h++) {
-            const from = new Date(dateRef.getFullYear(), dateRef.getMonth(), dateRef.getDate(), h, 0, 0);
-            const to   = new Date(dateRef.getFullYear(), dateRef.getMonth(), dateRef.getDate(), h, 59, 59);
-            // Берём все записи за этот час
-            const recs = voltageHistory.filter(r => { const t = new Date(r.timestamp); return t >= from && t <= to; });
-            labels.push(String(h));
-            if (recs.length > 0) {
-                // Последнее измерение в часе
-                const last = recs[recs.length - 1];
-                dA.push(last.phaseA);
-                dB.push(last.phaseB);
-                dC.push(last.phaseC);
-            } else {
-                dA.push(null); dB.push(null); dC.push(null);
-            }
-        }
-        setChartData(labels, dA, dB, dC);
-    }
-
     function updateChart() {
         const now = new Date();
 
         if (currentPeriodKey === 'today') {
-            filterByHours(now);
+            const from = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
+            const to   = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
+            filterHistory(from, to);
             return;
         }
 
         if (currentPeriodKey === 'yesterday') {
             const y = new Date(now); y.setDate(y.getDate() - 1);
-            filterByHours(y);
+            const from = new Date(y.getFullYear(), y.getMonth(), y.getDate(), 0, 0, 0);
+            const to   = new Date(y.getFullYear(), y.getMonth(), y.getDate(), 23, 59, 59);
+            filterHistory(from, to);
             return;
         }
 
