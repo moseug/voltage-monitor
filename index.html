@@ -253,6 +253,7 @@
                                 const isTimeAxis = currentPeriodKey === 'today' || currentPeriodKey === 'yesterday';
                                 const isWeekAxis = currentPeriodKey === 'week';
                                 const DAY_NAMES = ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'];
+                                const isMonthAxis = currentPeriodKey === 'month';
                                 if (isTimeAxis) {
                                     const num = items[0].parsed.x;
                                     const h = Math.floor(num);
@@ -266,6 +267,14 @@
                                     const h = Math.floor(frac * 24);
                                     const m = Math.round((frac * 24 - h) * 60);
                                     return DAY_NAMES[d] + ' ' + String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0');
+                                }
+                                if (isMonthAxis) {
+                                    const num = items[0].parsed.x;
+                                    const d = Math.floor(num);
+                                    const frac = num - d;
+                                    const h = Math.floor(frac * 24);
+                                    const m = Math.round((frac * 24 - h) * 60);
+                                    return d + ' ' + String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0');
                                 }
                                 return items[0].label;
                             }
@@ -452,9 +461,31 @@
         }
 
         if (currentPeriodKey === 'month') {
-            const from = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0);
-            const to   = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
-            filterHistory(from, to, 'datetime');
+            const year = now.getFullYear(), month = now.getMonth();
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+            const monthStart = new Date(year, month, 1, 0, 0, 0);
+
+            xAxis.type = 'linear'; xAxis.min = 1; xAxis.max = daysInMonth;
+            xAxis.ticks = {
+                stepSize: 1,
+                callback: v => Number.isInteger(v) ? v : ''
+            };
+
+            const dA = [], dB = [], dC = [];
+            voltageHistory.forEach(r => {
+                const t = new Date(r.timestamp);
+                if (t >= monthStart && t <= now) {
+                    const x = t.getDate() + (t.getHours() * 60 + t.getMinutes()) / 1440;
+                    dA.push({x, y: r.phaseA});
+                    dB.push({x, y: r.phaseB});
+                    dC.push({x, y: r.phaseC});
+                }
+            });
+            chart.data.labels = [];
+            chart.data.datasets[0].data = dA;
+            chart.data.datasets[1].data = dB;
+            chart.data.datasets[2].data = dC;
+            chart.update();
             return;
         }
 
