@@ -244,7 +244,24 @@
                 aspectRatio: 2.5,
                 plugins: {
                     legend: { display: false },
-                    tooltip: { mode: 'index', intersect: false }
+                    tooltip: {
+                        mode: 'index',
+                        intersect: false,
+                        callbacks: {
+                            title: function(items) {
+                                if (!items.length) return '';
+                                const raw = items[0].label;
+                                // Если это число (Сегодня/Вчера) — конвертируем в ЧЧ:ММ
+                                const num = parseFloat(raw);
+                                if (!isNaN(num) && String(raw).match(/^[\d.]+$/)) {
+                                    const h = Math.floor(num);
+                                    const m = Math.round((num - h) * 60);
+                                    return String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0');
+                                }
+                                return raw;
+                            }
+                        }
+                    }
                 },
                 scales: {
                     y: {
