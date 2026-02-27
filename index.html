@@ -210,28 +210,19 @@
     function initChart() {
         const ctx = document.getElementById('voltageChart').getContext('2d');
 
-        // Плагин для цветных зон фона
         const bgZones = {
             id: 'bgZones',
             beforeDraw(chart) {
-                const { ctx, chartArea: { left, right, top, bottom }, scales: { y } } = chart;
-                if (!y) return;
-
-                const y198 = y.getPixelForValue(198);
-                const y242 = y.getPixelForValue(242);
-                const yTop = y.getPixelForValue(y.max);
-                const yBot = y.getPixelForValue(y.min);
-
+                const { ctx, chartArea, scales: { y } } = chart;
+                if (!y || !chartArea) return;
+                const { left, right } = chartArea;
                 ctx.save();
-                // Красная зона верх (выше 242)
                 ctx.fillStyle = 'rgba(255, 100, 100, 0.08)';
-                ctx.fillRect(left, yTop, right - left, y242 - yTop);
-                // Зелёная зона (198–242)
+                ctx.fillRect(left, y.getPixelForValue(y.max), right - left, y.getPixelForValue(242) - y.getPixelForValue(y.max));
                 ctx.fillStyle = 'rgba(100, 200, 100, 0.08)';
-                ctx.fillRect(left, y242, right - left, y198 - y242);
-                // Красная зона низ (ниже 198)
+                ctx.fillRect(left, y.getPixelForValue(242), right - left, y.getPixelForValue(198) - y.getPixelForValue(242));
                 ctx.fillStyle = 'rgba(255, 100, 100, 0.08)';
-                ctx.fillRect(left, y198, right - left, yBot - y198);
+                ctx.fillRect(left, y.getPixelForValue(198), right - left, y.getPixelForValue(y.min) - y.getPixelForValue(198));
                 ctx.restore();
             }
         };
@@ -241,21 +232,9 @@
             data: {
                 labels: [],
                 datasets: [
-                    {
-                        label: 'Фаза A', data: [],
-                        borderColor: '#795548', backgroundColor: 'transparent',
-                        tension: 0, borderWidth: 2, pointRadius: 0
-                    },
-                    {
-                        label: 'Фаза B', data: [],
-                        borderColor: '#111111', backgroundColor: 'transparent',
-                        tension: 0, borderWidth: 2, pointRadius: 0
-                    },
-                    {
-                        label: 'Фаза C', data: [],
-                        borderColor: '#888888', backgroundColor: 'transparent',
-                        tension: 0, borderWidth: 2, pointRadius: 0
-                    }
+                    { label: 'Фаза A', data: [], borderColor: '#795548', backgroundColor: 'transparent', tension: 0, borderWidth: 2, pointRadius: 0 },
+                    { label: 'Фаза B', data: [], borderColor: '#111111', backgroundColor: 'transparent', tension: 0, borderWidth: 2, pointRadius: 0 },
+                    { label: 'Фаза C', data: [], borderColor: '#888888', backgroundColor: 'transparent', tension: 0, borderWidth: 2, pointRadius: 0 }
                 ]
             },
             plugins: [bgZones],
@@ -273,9 +252,7 @@
                         grid: { color: 'rgba(0,0,0,0.05)' },
                         ticks: { callback: v => v + ' В' }
                     },
-                    x: {
-                        grid: { color: 'rgba(0,0,0,0.05)' }
-                    }
+                    x: { grid: { color: 'rgba(0,0,0,0.05)' } }
                 }
             }
         });
@@ -315,90 +292,57 @@
     function updateStatus(id, val) {
         const el = document.getElementById(id);
         el.className = 'status';
-        if (val >= 207 && val <= 253)         { el.classList.add('normal');  el.textContent = 'Норма'; }
+        if (val >= 207 && val <= 253)          { el.classList.add('normal');  el.textContent = 'Норма'; }
         else if (val >= 195.5 && val <= 264.5) { el.classList.add('warning'); el.textContent = 'Отклонение'; }
         else                                   { el.classList.add('danger');  el.textContent = 'Опасно!'; }
     }
 
-    const DAY_NAMES = ['Вс','Пн','Вт','Ср','Чт','Пт','Сб'];
+    function filterHistory(from, to) {
+        const labels = [], dA = [], dB = [], dC = [];
+        voltageHistory.forEach(r => {
+            const t = new Date(r.timestamp);
+            if (t >= from && t <= to) {
+                labels.push(t.toLocaleDateString('ru-RU', {day:'2-digit', month:'2-digit'})
+                    + ' ' + t.toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'}));
+                dA.push(r.phaseA);
+                dB.push(r.phaseB);
+                dC.push(r.phaseC);
+            }
+        });
+        setChartData(labels, dA, dB, dC);
+    }
 
     function updateChart() {
-        let range, buildLabels;
+        const now = new Date();
 
-        if (currentPeriodKey === 'today' || currentPeriodKey === 'yesterday') {
-            // Сутки: бакеты по часам 1..24, данные усредняем по часу
-            let dayStart;
-            if (currentPeriodKey === 'today') {
-                dayStart = new Date(); dayStart.setHours(0,0,0,0);
-            } else {
-                dayStart = new Date(); dayStart.setDate(dayStart.getDate()-1); dayStart.setHours(0,0,0,0);
-            }
+        if (currentPeriodKey === 'today') {
+            const from = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
+            const to   = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
+            filterHistory(from, to);
+            return;
+        }
 
-            // 24 бакета: час 0..23, подпись 0..23
-            const buckets = Array.from({length: 24}, () => ({ a:[], b:[], c:[] }));
-            voltageHistory.forEach(r => {
-                const t = new Date(r.timestamp);
-                const dayOfRecord = new Date(t); dayOfRecord.setHours(0,0,0,0);
-                if (dayOfRecord.getTime() === dayStart.getTime()) {
-                    const h = t.getHours();
-                    buckets[h].a.push(r.phaseA);
-                    buckets[h].b.push(r.phaseB);
-                    buckets[h].c.push(r.phaseC);
-                }
-            });
-
-            const labels = [], dA = [], dB = [], dC = [];
-            buckets.forEach((b, i) => {
-                labels.push(String(i));
-                dA.push(b.a.length ? avg(b.a) : null);
-                dB.push(b.b.length ? avg(b.b) : null);
-                dC.push(b.c.length ? avg(b.c) : null);
-            });
-            // Добавляем точку 24 = данные часа 23, чтобы получить 24 отрезка
-            labels.push('24');
-            dA.push(dA[23]); dB.push(dB[23]); dC.push(dC[23]);
-            setChartData(labels, dA, dB, dC);
+        if (currentPeriodKey === 'yesterday') {
+            const y = new Date(now); y.setDate(y.getDate() - 1);
+            const from = new Date(y.getFullYear(), y.getMonth(), y.getDate(), 0, 0, 0);
+            const to   = new Date(y.getFullYear(), y.getMonth(), y.getDate(), 23, 59, 59);
+            filterHistory(from, to);
             return;
         }
 
         if (currentPeriodKey === 'week') {
-            const today = new Date(); today.setHours(0,0,0,0);
-            const dayOfWeek = today.getDay();
-            const diffToMon = (dayOfWeek === 0) ? 6 : dayOfWeek - 1;
-            const monday = new Date(today); monday.setDate(today.getDate() - diffToMon);
-            const sunday = new Date(monday); sunday.setDate(monday.getDate() + 6); sunday.setHours(23,59,59,999);
-
-            const DAY_LABELS = ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'];
-            const labels = [], dA = [], dB = [], dC = [];
-            voltageHistory.forEach(r => {
-                const t = new Date(r.timestamp);
-                if (t >= monday && t <= sunday) {
-                    const dow = t.getDay();
-                    const idx = (dow === 0) ? 6 : dow - 1;
-                    const time = t.toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'});
-                    labels.push(DAY_LABELS[idx] + ' ' + time);
-                    dA.push(r.phaseA); dB.push(r.phaseB); dC.push(r.phaseC);
-                }
-            });
-            setChartData(labels, dA, dB, dC);
+            const dow = now.getDay();
+            const diffToMon = (dow === 0) ? 6 : dow - 1;
+            const from = new Date(now.getFullYear(), now.getMonth(), now.getDate() - diffToMon, 0, 0, 0);
+            const to   = new Date(from); to.setDate(from.getDate() + 6); to.setHours(23, 59, 59);
+            filterHistory(from, to);
             return;
         }
 
         if (currentPeriodKey === 'month') {
-            const now = new Date();
-            const year = now.getFullYear(), month = now.getMonth();
-            const from = new Date(year, month, 1);
-            const to   = new Date(year, month + 1, 0); to.setHours(23,59,59,999);
-
-            const labels = [], dA = [], dB = [], dC = [];
-            voltageHistory.forEach(r => {
-                const t = new Date(r.timestamp);
-                if (t >= from && t <= to) {
-                    labels.push(t.getDate() + ' ' + t.toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'}));
-                    dA.push(r.phaseA); dB.push(r.phaseB); dC.push(r.phaseC);
-                }
-            });
-            setChartData(labels, dA, dB, dC);
+            const from = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0);
+            const to   = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+            filterHistory(from, to);
             return;
         }
 
@@ -406,49 +350,13 @@
             const fromVal = document.getElementById('date-from').value;
             const toVal   = document.getElementById('date-to').value;
             if (!fromVal || !toVal) return;
-            const from = new Date(fromVal);
-            const to   = new Date(toVal); to.setHours(23,59,59,999);
-            const days = Math.round((to - from) / 86400000) + 1;
-
-            if (days <= 1) {
-                // Один день — 24 часа
-                const buckets = Array.from({length: 24}, () => ({ a:[], b:[], c:[] }));
-                voltageHistory.forEach(r => {
-                    const t = new Date(r.timestamp);
-                    if (t >= from && t <= to) buckets[t.getHours()].a.push(r.phaseA) || buckets[t.getHours()].b.push(r.phaseB) || buckets[t.getHours()].c.push(r.phaseC);
-                });
-                // упрощённый вариант для custom 1 день
-                const labels = [], dA = [], dB = [], dC = [];
-                voltageHistory.forEach(r => {
-                    const t = new Date(r.timestamp);
-                    if (t >= from && t <= to) {
-                        labels.push(t.toLocaleTimeString('ru-RU', {hour:'2-digit', minute:'2-digit'}));
-                        dA.push(r.phaseA); dB.push(r.phaseB); dC.push(r.phaseC);
-                    }
-                });
-                setChartData(labels, dA, dB, dC);
-            } else {
-                // Несколько дней — по датам
-                const buckets = [];
-                for (let i = 0; i < days; i++) {
-                    const d = new Date(from); d.setDate(d.getDate() + i);
-                    buckets.push({ date: d, a:[], b:[], c:[] });
-                }
-                voltageHistory.forEach(r => {
-                    const t = new Date(r.timestamp);
-                    if (t >= from && t <= to) {
-                        const dayKey = new Date(t); dayKey.setHours(0,0,0,0);
-                        const bk = buckets.find(b => { const bd = new Date(b.date); bd.setHours(0,0,0,0); return bd.getTime() === dayKey.getTime(); });
-                        if (bk) { bk.a.push(r.phaseA); bk.b.push(r.phaseB); bk.c.push(r.phaseC); }
-                    }
-                });
-                const labels = buckets.map(b => b.date.toLocaleDateString('ru-RU', {day:'2-digit', month:'2-digit'}));
-                setChartData(labels, buckets.map(b => b.a.length ? avg(b.a) : null), buckets.map(b => b.b.length ? avg(b.b) : null), buckets.map(b => b.c.length ? avg(b.c) : null));
-            }
+            const [fy, fm, fd] = fromVal.split('-').map(Number);
+            const [ty, tm, td] = toVal.split('-').map(Number);
+            const from = new Date(fy, fm - 1, fd, 0, 0, 0);
+            const to   = new Date(ty, tm - 1, td, 23, 59, 59);
+            filterHistory(from, to);
         }
     }
-
-    function avg(arr) { return arr.reduce((s, v) => s + v, 0) / arr.length; }
 
     function setChartData(labels, dA, dB, dC) {
         chart.data.labels = labels;
@@ -462,7 +370,6 @@
         currentPeriodKey = key;
         document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
-
         const block = document.getElementById('custom-period');
         if (key === 'custom') {
             block.style.display = 'flex';
@@ -501,7 +408,7 @@
         let html = '<ul style="list-style:none;padding:0;">';
         phases.forEach(({ name, val }) => {
             let icon, status;
-            if (val >= 207 && val <= 253)         { icon = '✅'; status = '<span style="color:#155724;font-weight:600;">✓ Соответствует норме</span>'; }
+            if (val >= 207 && val <= 253)          { icon = '✅'; status = '<span style="color:#155724;font-weight:600;">✓ Соответствует норме</span>'; }
             else if (val >= 195.5 && val <= 264.5) { icon = '⚠️'; status = '<span style="color:#856404;font-weight:600;">⚠ Предельное отклонение</span>'; }
             else                                   { icon = '❌'; status = '<span style="color:#721c24;font-weight:600;">✗ Превышение нормы!</span>'; }
             html += `<li style="padding:8px 0;border-bottom:1px solid #ddd;">${icon} <strong>Фаза ${name}:</strong> ${val.toFixed(1)} В — ${status}</li>`;
