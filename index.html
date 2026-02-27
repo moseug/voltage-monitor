@@ -253,10 +253,13 @@
                         ticks: { callback: v => v + ' В' }
                     },
                     x: {
+                        type: 'linear',
+                        min: 0,
+                        max: 23,
                         grid: { color: 'rgba(0,0,0,0.05)' },
                         ticks: {
-                            maxTicksLimit: 24,
-                            maxRotation: 0
+                            stepSize: 1,
+                            callback: v => Number.isInteger(v) ? v : ''
                         }
                     }
                 }
@@ -306,25 +309,57 @@
     // Единая функция фильтрации — никакого усреднения, каждая точка = реальное измерение
     function filterHistory(from, to, timeFmt) {
         const labels = [], dA = [], dB = [], dC = [];
-        voltageHistory.forEach(r => {
-            const t = new Date(r.timestamp);
-            if (t >= from && t <= to) {
-                if (timeFmt === 'time') {
-                    labels.push(t.getHours());
-                } else {
+
+        if (timeFmt === 'time') {
+            // Заполняем все 24 часа чтобы шкала всегда была 0-23
+            const byHour = {};
+            voltageHistory.forEach(r => {
+                const t = new Date(r.timestamp);
+                if (t >= from && t <= to) {
+                    const h = t.getHours();
+                    if (!byHour[h]) byHour[h] = [];
+                    byHour[h].push({ phaseA: r.phaseA, phaseB: r.phaseB, phaseC: r.phaseC, min: t.getMinutes() });
+                }
+            });
+            for (let h = 0; h <= 23; h++) {
+                const recs = byHour[h];
+                if (recs && recs.length > 0) {
+                    // Добавляем каждую точку внутри часа
+                    recs.forEach(r => {
+                        labels.push(h + r.min / 60);
+                        dA.push(r.phaseA);
+                        dB.push(r.phaseB);
+                        dC.push(r.phaseC);
+                    });
+                }
+            }
+        } else {
+            voltageHistory.forEach(r => {
+                const t = new Date(r.timestamp);
+                if (t >= from && t <= to) {
                     labels.push(t.toLocaleDateString('ru-RU', {day: '2-digit', month: '2-digit'})
                         + ' ' + t.toLocaleTimeString('ru-RU', {hour: '2-digit', minute: '2-digit'}));
+                    dA.push(r.phaseA);
+                    dB.push(r.phaseB);
+                    dC.push(r.phaseC);
                 }
-                dA.push(r.phaseA);
-                dB.push(r.phaseB);
-                dC.push(r.phaseC);
-            }
-        });
+            });
+        }
+
         setChartData(labels, dA, dB, dC);
     }
 
     function updateChart() {
         const now = new Date();
+        const xAxis = chart.options.scales.x;
+
+        if (currentPeriodKey === 'today' || currentPeriodKey === 'yesterday') {
+            xAxis.type = 'linear'; xAxis.min = 0; xAxis.max = 23;
+            xAxis.ticks = { stepSize: 1, callback: v => Number.isInteger(v) ? v : '' };
+        } else {
+            xAxis.type = 'category'; xAxis.min = undefined; xAxis.max = undefined;
+            xAxis.ticks = { maxRotation: 0, autoSkip: true, maxTicksLimit: 15 };
+        }
 
         if (currentPeriodKey === 'today') {
             const from = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
