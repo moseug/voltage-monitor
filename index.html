@@ -465,10 +465,10 @@
             const daysInMonth = new Date(year, month + 1, 0).getDate();
             const monthStart = new Date(year, month, 1, 0, 0, 0);
 
-            xAxis.type = 'linear'; xAxis.min = 1; xAxis.max = daysInMonth;
+            xAxis.type = 'linear'; xAxis.min = 1; xAxis.max = daysInMonth + 1;
             xAxis.ticks = {
                 stepSize: 1,
-                callback: v => Number.isInteger(v) ? v : ''
+                callback: v => Number.isInteger(v) && v <= daysInMonth ? v : ''
             };
 
             const dA = [], dB = [], dC = [];
