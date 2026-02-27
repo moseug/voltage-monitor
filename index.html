@@ -255,7 +255,7 @@
                     x: {
                         type: 'linear',
                         min: 0,
-                        max: 23,
+                        max: 24,
                         grid: { color: 'rgba(0,0,0,0.05)' },
                         ticks: {
                             stepSize: 1,
@@ -354,7 +354,7 @@
         const xAxis = chart.options.scales.x;
 
         if (currentPeriodKey === 'today' || currentPeriodKey === 'yesterday') {
-            xAxis.type = 'linear'; xAxis.min = 0; xAxis.max = 23;
+            xAxis.type = 'linear'; xAxis.min = 0; xAxis.max = 24;
             xAxis.ticks = { stepSize: 1, callback: v => Number.isInteger(v) ? v : '' };
         } else {
             xAxis.type = 'category'; xAxis.min = undefined; xAxis.max = undefined;
