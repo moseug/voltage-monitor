@@ -78,14 +78,7 @@
             border-radius: 8px; font-size: 0.95em;
         }
 
-        .stats-bar {
-            display: flex; gap: 20px; flex-wrap: wrap;
-            margin-bottom: 15px; font-size: 0.95em; font-weight: 600;
-        }
-        .stats-item { padding: 5px 14px; border-radius: 6px; color: #333; }
-        .stats-item.normal  { background: rgba(100, 200, 100, 0.15); color: #2e7d32; }
-        .stats-item.warning { background: rgba(255, 100, 100, 0.12); color: #c62828; }
-        .stats-item.outage  { background: rgba(255, 0, 0, 0.18);     color: #b71c1c; }
+        .export-btn {
             padding: 8px 20px; background: #888; color: white;
             border: none; border-radius: 8px; cursor: pointer;
             font-weight: 600; font-size: 0.95em; transition: all 0.3s ease;
@@ -156,12 +149,6 @@
             <label>По:</label>
             <input type="date" id="date-to">
             <button class="period-btn active" onclick="applyCustomPeriod()">Применить</button>
-        </div>
-
-        <div class="stats-bar" id="stats-bar">
-            <span class="stats-item" id="stat-normal">В норме: —</span>
-            <span class="stats-item" id="stat-warning">Вне допуска: —</span>
-            <span class="stats-item" id="stat-outage">Отключение: —</span>
         </div>
 
         <canvas id="voltageChart"></canvas>
@@ -409,7 +396,6 @@
             const from = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
             const to   = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
             filterHistory(from, to, 'time');
-            calcStats(from, now);
             return;
         }
 
@@ -418,7 +404,6 @@
             const from = new Date(yest.getFullYear(), yest.getMonth(), yest.getDate(), 0, 0, 0);
             const to   = new Date(yest.getFullYear(), yest.getMonth(), yest.getDate(), 23, 59, 59);
             filterHistory(from, to, 'time');
-            calcStats(from, to);
             return;
         }
 
@@ -450,7 +435,6 @@
             chart.data.datasets[1].data = dB;
             chart.data.datasets[2].data = dC;
             chart.update();
-            calcStats(monday, now);
             return;
         }
 
@@ -480,7 +464,6 @@
             chart.data.datasets[1].data = dB;
             chart.data.datasets[2].data = dC;
             chart.update();
-            calcStats(monthStart, now);
             return;
         }
 
@@ -493,7 +476,6 @@
             const from = new Date(fy, fm - 1, fd, 0, 0, 0);
             const to   = new Date(ty, tm - 1, td, 23, 59, 59);
             filterHistory(from, to, 'datetime');
-            calcStats(from, to);
         }
     }
 
