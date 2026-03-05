@@ -1,100 +1,654 @@
-const puppeteer = require('puppeteer');
-const fs = require('fs');
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>СЛАВА под напряжением</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
 
-const STABILIZER_URL = process.env.STABILIZER_URL || 'http://46.44.56.179:8080';
-const USERNAME = process.env.STABILIZER_USER || 'user';
-const PASSWORD = process.env.STABILIZER_PASSWORD || 'password';
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #f0f0f0;
+            min-height: 100vh;
+            padding: 20px;
+            color: #333;
+        }
 
-async function collectData() {
-  let browser;
+        .container { max-width: 1400px; margin: 0 auto; }
 
-  try {
-    console.log('Launching browser...');
+        .header { text-align: left; color: #111; margin-bottom: 10px; }
+        .header h1 { font-size: 2.5em; font-weight: 700; margin-bottom: 0; }
 
-    browser = await puppeteer.launch({
-      headless: true,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-gpu'
-      ]
-    });
+        .last-update { text-align: left; color: #444; margin-bottom: 20px; font-size: 0.9em; }
 
-    const page = await browser.newPage();
+        .cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
 
-    await page.authenticate({ username: USERNAME, password: PASSWORD });
-    await page.setUserAgent(
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-    );
+        .card {
+            background: white; border-radius: 16px; padding: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+            transition: transform 0.3s ease;
+        }
+        .card:hover { transform: translateY(-5px); }
 
-    console.log('Navigating to home.stm...');
-    await page.goto(STABILIZER_URL + '/home.stm', {
-      waitUntil: 'networkidle0',
-      timeout: 30000
-    });
+        .card-title { font-size: 0.9em; color: #666; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 15px; }
 
-    await page.screenshot({ path: 'home-page.png' });
-    console.log('Screenshot saved');
+        .voltage-value { font-size: 3em; font-weight: 700; margin-bottom: 10px; }
+        .voltage-value.phase-a { color: #795548; }
+        .voltage-value.phase-b { color: #111111; }
+        .voltage-value.phase-c { color: #888888; }
+        .voltage-unit { font-size: 0.4em; color: #999; margin-left: 5px; }
 
-    // Ждём появления элемента с напряжением (до 10 сек)
-    try {
-      await page.waitForSelector('#input-voltage', { timeout: 10000 });
-    } catch {
-      console.warn('Element #input-voltage not found by selector, will try body text');
+        .status {
+            display: inline-block; padding: 5px 15px;
+            border-radius: 20px; font-size: 0.85em; font-weight: 600;
+        }
+        .status.normal  { background: #d4edda; color: #155724; }
+        .status.warning { background: #fff3cd; color: #856404; }
+        .status.danger  { background: #f8d7da; color: #721c24; }
+
+        .chart-container {
+            background: white; border-radius: 16px; padding: 30px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1); margin-bottom: 30px;
+        }
+
+        .chart-controls { display: flex; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 10px; }
+
+        .period-btn {
+            padding: 8px 20px; border: 2px solid #111; background: white;
+            color: #111; border-radius: 8px; cursor: pointer;
+            font-weight: 600; transition: all 0.3s ease;
+        }
+        .period-btn:hover, .period-btn.active { background: #111; color: white; }
+
+        .custom-period {
+            display: none; align-items: center; gap: 10px;
+            flex-wrap: wrap; margin-bottom: 15px;
+        }
+        .custom-period label { color: #111; font-weight: 600; }
+        .custom-period input[type="date"] {
+            padding: 6px 10px; border: 2px solid #ccc;
+            border-radius: 8px; font-size: 0.95em;
+        }
+
+        /* Строка статистики */
+        .voltage-stats {
+            display: flex;
+            gap: 24px;
+            flex-wrap: wrap;
+            margin-bottom: 20px;
+            font-size: 0.95em;
+            font-weight: 600;
+        }
+        .stat-item {
+            padding: 6px 14px;
+            border-radius: 8px;
+            color: #333;
+            background: transparent;
+        }
+        .stat-item.stat-normal   { background: rgba(100, 200, 100, 0.15); color: #2a7a2a; }
+        .stat-item.stat-warning  { background: rgba(255, 100, 100, 0.12); color: #a04040; }
+        .stat-item.stat-outage   { background: rgba(255, 100, 100, 0.28); color: #7a1c1c; }
+
+        .export-btn {
+            padding: 8px 20px; background: #888; color: white;
+            border: none; border-radius: 8px; cursor: pointer;
+            font-weight: 600; font-size: 0.95em; transition: all 0.3s ease;
+            display: inline-flex; align-items: center; gap: 8px;
+        }
+        .export-btn:hover { background: #666; }
+
+        .info-section { background: white; border-radius: 16px; padding: 30px; box-shadow: 0 10px 30px rgba(0,0,0,0.1); }
+        .info-title { font-size: 1.5em; font-weight: 600; color: #333; margin-bottom: 20px; }
+        .info-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
+
+        .info-item { padding: 15px; background: #f8f9fa; border-radius: 8px; border-left: 4px solid #795548; }
+        .info-item h4 { color: #795548; margin-bottom: 10px; }
+        .info-item p { color: #666; line-height: 1.6; }
+
+        .compliance { margin-top: 20px; padding: 20px; background: #e8f4f8; border-radius: 8px; border-left: 4px solid #17a2b8; }
+        .compliance h4 { color: #17a2b8; margin-bottom: 15px; }
+
+        .error { background: #f8d7da; color: #721c24; padding: 15px; border-radius: 8px; margin-bottom: 20px; }
+
+        @media (max-width: 768px) {
+            .header h1 { font-size: 1.8em; }
+            .voltage-value { font-size: 2.5em; }
+            .chart-controls { flex-direction: column; align-items: stretch; }
+            .voltage-stats { gap: 10px; }
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+
+    <div class="header">
+        <h1>СЛАВА под напряжением</h1>
+    </div>
+
+    <div class="last-update" id="last-update">Автоматическое обновление каждые 5 минут. Последнее обновление: —</div>
+    <div id="error-container"></div>
+
+    <div class="cards">
+        <div class="card">
+            <div class="card-title">Фаза A</div>
+            <div class="voltage-value phase-a" id="phase-a">—<span class="voltage-unit">В</span></div>
+            <span class="status" id="status-a">Загрузка...</span>
+        </div>
+        <div class="card">
+            <div class="card-title">Фаза B</div>
+            <div class="voltage-value phase-b" id="phase-b">—<span class="voltage-unit">В</span></div>
+            <span class="status" id="status-b">Загрузка...</span>
+        </div>
+        <div class="card">
+            <div class="card-title">Фаза C</div>
+            <div class="voltage-value phase-c" id="phase-c">—<span class="voltage-unit">В</span></div>
+            <span class="status" id="status-c">Загрузка...</span>
+        </div>
+    </div>
+
+    <div class="chart-container">
+        <div class="chart-controls">
+            <button class="period-btn active" onclick="changePeriod('today', this)">Сегодня</button>
+            <button class="period-btn" onclick="changePeriod('yesterday', this)">Вчера</button>
+            <button class="period-btn" onclick="changePeriod('week', this)">За неделю</button>
+            <button class="period-btn" onclick="changePeriod('month', this)">За месяц</button>
+            <button class="period-btn" onclick="changePeriod('custom', this)">За период</button>
+        </div>
+
+        <div class="custom-period" id="custom-period">
+            <label>С:</label>
+            <input type="date" id="date-from">
+            <label>По:</label>
+            <input type="date" id="date-to">
+            <button class="period-btn active" onclick="applyCustomPeriod()">Применить</button>
+        </div>
+
+        <!-- Строка статистики -->
+        <div class="voltage-stats" id="voltage-stats">
+            <span class="stat-item" id="stat-normal">В норме: —</span>
+            <span class="stat-item" id="stat-warning">Вне допуска: —</span>
+            <span class="stat-item" id="stat-outage">Отключение: —</span>
+        </div>
+
+        <canvas id="voltageChart"></canvas>
+
+        <div style="text-align: right; margin-top: 20px;">
+            <button class="export-btn" onclick="exportToExcel()">📊 Выгрузить</button>
+        </div>
+    </div>
+
+    <div class="info-section">
+        <div class="info-grid">
+            <div class="info-item">
+                <h4>Номинальное напряжение</h4>
+                <p><strong>220 В</strong><br>
+                Согласно ГОСТ 32144-2013 стандартное напряжение сети составляет 220 В.</p>
+            </div>
+            <div class="info-item">
+                <h4>Допустимые отклонения</h4>
+                <p><strong>±10% (198–242 В)</strong><br>
+                Согласно ГОСТ 32144-2013 отклонения напряжения не должны превышать ±10% номинального значения 220 В - от 198 до 242 В.</p>
+            </div>
+            <div class="info-item">
+                <h4>Допустимое время отключения</h4>
+                <p><strong>До 72 часов в год</strong><br>
+                Согласно Постановлению Правительства РФ №354, суммарная продолжительность перерывов электроснабжения не должна превышать 72 часа в год.</p>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<script>
+    let voltageHistory = [];
+    let currentPeriodKey = 'today';
+    let chart = null;
+
+    function initChart() {
+        const ctx = document.getElementById('voltageChart').getContext('2d');
+
+        const bgZones = {
+            id: 'bgZones',
+            beforeDraw(chart) {
+                const { ctx, chartArea, scales: { y } } = chart;
+                if (!y || !chartArea) return;
+                const { left, right } = chartArea;
+                ctx.save();
+                ctx.fillStyle = 'rgba(255, 100, 100, 0.08)';
+                ctx.fillRect(left, y.getPixelForValue(y.max), right - left, y.getPixelForValue(242) - y.getPixelForValue(y.max));
+                ctx.fillStyle = 'rgba(100, 200, 100, 0.08)';
+                ctx.fillRect(left, y.getPixelForValue(242), right - left, y.getPixelForValue(198) - y.getPixelForValue(242));
+                ctx.fillStyle = 'rgba(255, 100, 100, 0.08)';
+                ctx.fillRect(left, y.getPixelForValue(198), right - left, y.getPixelForValue(y.min) - y.getPixelForValue(198));
+                ctx.restore();
+            }
+        };
+
+        chart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [
+                    { label: 'Фаза A', data: [], borderColor: '#795548', backgroundColor: 'transparent', tension: 0, borderWidth: 2, pointRadius: 0 },
+                    { label: 'Фаза B', data: [], borderColor: '#111111', backgroundColor: 'transparent', tension: 0, borderWidth: 2, pointRadius: 0 },
+                    { label: 'Фаза C', data: [], borderColor: '#888888', backgroundColor: 'transparent', tension: 0, borderWidth: 2, pointRadius: 0 }
+                ]
+            },
+            plugins: [bgZones],
+            options: {
+                responsive: true,
+                maintainAspectRatio: true,
+                aspectRatio: 2.5,
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        mode: 'index',
+                        intersect: false,
+                        callbacks: {
+                            title: function(items) {
+                                if (!items.length) return '';
+                                const isTimeAxis = currentPeriodKey === 'today' || currentPeriodKey === 'yesterday';
+                                const isWeekAxis = currentPeriodKey === 'week';
+                                const DAY_NAMES = ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'];
+                                const isMonthAxis = currentPeriodKey === 'month';
+                                if (isTimeAxis) {
+                                    const num = items[0].parsed.x;
+                                    const h = Math.floor(num);
+                                    const m = Math.round((num - h) * 60);
+                                    return String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0');
+                                }
+                                if (isWeekAxis) {
+                                    const num = items[0].parsed.x;
+                                    const d = Math.floor(num);
+                                    const frac = num - d;
+                                    const h = Math.floor(frac * 24);
+                                    const m = Math.round((frac * 24 - h) * 60);
+                                    return DAY_NAMES[d] + ' ' + String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0');
+                                }
+                                if (isMonthAxis) {
+                                    const num = items[0].parsed.x;
+                                    const d = Math.floor(num);
+                                    const frac = num - d;
+                                    const h = Math.floor(frac * 24);
+                                    const m = Math.round((frac * 24 - h) * 60);
+                                    return d + ' ' + String(h).padStart(2,'0') + ':' + String(m).padStart(2,'0');
+                                }
+                                return items[0].label;
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        min: 170, max: 270,
+                        grid: { color: 'rgba(0,0,0,0.05)' },
+                        ticks: { callback: v => v + ' В' }
+                    },
+                    x: {
+                        type: 'linear',
+                        min: 0,
+                        max: 24,
+                        grid: { color: 'rgba(0,0,0,0.05)' },
+                        ticks: {
+                            stepSize: 1,
+                            callback: v => Number.isInteger(v) ? v : ''
+                        }
+                    }
+                }
+            }
+        });
     }
 
-    const voltageData = await page.evaluate(() => {
-      const voltageElement = document.getElementById('input-voltage');
-      const text = voltageElement
-        ? voltageElement.textContent.trim()
-        : document.body.innerText;
+    async function loadData() {
+        try {
+            const latestRes = await fetch('data/latest.json');
+            if (!latestRes.ok) throw new Error('Не удалось загрузить latest.json');
+            const latest = await latestRes.json();
 
-      const match = text.match(/(\d+\.?\d*)\s*\/\s*(\d+\.?\d*)\s*\/\s*(\d+\.?\d*)/);
-      if (!match) return null;
+            updateDisplay(latest);
+            document.getElementById('last-update').textContent =
+                'Автоматическое обновление каждые 5 минут. Последнее обновление: ' + new Date(latest.timestamp).toLocaleString('ru-RU');
 
-      const values = [parseFloat(match[1]), parseFloat(match[2]), parseFloat(match[3])];
-      if (!values.every(v => v >= 180 && v <= 280)) return null;
+            const histRes = await fetch('data/voltage-history.json');
+            if (!histRes.ok) throw new Error('Не удалось загрузить voltage-history.json');
+            voltageHistory = await histRes.json();
 
-      return { phaseA: values[0], phaseB: values[1], phaseC: values[2] };
-    });
-
-    if (!voltageData) {
-      await page.screenshot({ path: 'debug-screenshot.png' });
-      const html = await page.content();
-      console.log('Page HTML preview:', html.substring(0, 1000));
-      throw new Error('Could not find voltage data on page');
+            updateChart();
+            clearError();
+        } catch (e) {
+            showError('Ошибка загрузки данных: ' + e.message);
+        }
     }
 
-    voltageData.timestamp = new Date().toISOString();
-    console.log('Voltage data extracted:', voltageData);
+    function updateDisplay(v) {
+        document.getElementById('phase-a').innerHTML = v.phaseA.toFixed(1) + '<span class="voltage-unit">В</span>';
+        document.getElementById('phase-b').innerHTML = v.phaseB.toFixed(1) + '<span class="voltage-unit">В</span>';
+        document.getElementById('phase-c').innerHTML = v.phaseC.toFixed(1) + '<span class="voltage-unit">В</span>';
+        updateStatus('status-a', v.phaseA);
+        updateStatus('status-b', v.phaseB);
+        updateStatus('status-c', v.phaseC);
+    }
 
-    saveData(voltageData);
-    console.log('Data collection completed successfully!');
+    function updateStatus(id, val) {
+        const el = document.getElementById(id);
+        el.className = 'status';
+        if (val >= 207 && val <= 253)          { el.classList.add('normal');  el.textContent = 'Норма'; }
+        else if (val >= 195.5 && val <= 264.5) { el.classList.add('warning'); el.textContent = 'Отклонение'; }
+        else                                   { el.classList.add('danger');  el.textContent = 'Опасно!'; }
+    }
 
-  } catch (error) {
-    console.error('Error during data collection:', error);
-    process.exit(1);
-  } finally {
-    if (browser) await browser.close();
-  }
-}
+    // Классификация одной записи по всем трём фазам
+    // «Норма» — все три в диапазоне 198–242 В
+    // «Вне допуска» — хотя бы одна фаза за пределами 198–242, но ни одна не отключена (<10 В)
+    // «Отключение» — хотя бы одна фаза < 10 В (считаем отсутствие напряжения)
+    function classifyRecord(r) {
+        const vals = [r.phaseA, r.phaseB, r.phaseC];
+        if (vals.some(v => v < 10))                           return 'outage';
+        if (vals.every(v => v >= 198 && v <= 242))            return 'normal';
+        return 'warning';
+    }
 
-function saveData(voltageData) {
-  if (!fs.existsSync('data')) fs.mkdirSync('data');
+    // Форматирование минут в ЧЧ:ММ
+    function fmtTime(minutes) {
+        const h = Math.floor(minutes / 60);
+        const m = Math.round(minutes % 60);
+        return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
+    }
 
-  fs.writeFileSync('data/latest.json', JSON.stringify(voltageData, null, 2));
+    // Расчёт и отображение статистики по отфильтрованным записям
+    function updateStats(records) {
+        let minNormal = 0, minWarning = 0, minOutage = 0;
 
-  let history = [];
-  if (fs.existsSync('data/voltage-history.json')) {
-    history = JSON.parse(fs.readFileSync('data/voltage-history.json', 'utf8'));
-  }
+        // Считаем время по реальным меткам: каждая запись «отвечает» за интервал
+        // от себя до следующей (или до конца периода для последней).
+        // Для первой записи берём интервал до второй (или 5 мин, если она одна).
+        // Порог разрыва — больше этого значения интерполируем
+        const GAP_THRESHOLD_MIN = 10;
 
-  history.push(voltageData);
+        for (let i = 0; i < records.length; i++) {
+            const cur  = new Date(records[i].timestamp);
+            const next = records[i + 1] ? new Date(records[i + 1].timestamp) : null;
 
-  // Храним все данные без ограничений
-  fs.writeFileSync('data/voltage-history.json', JSON.stringify(history, null, 2));
-  console.log('Data saved. Total records:', history.length);
-}
+            if (next) {
+                const diff = (next - cur) / 60000;
 
-collectData();
+                if (diff <= GAP_THRESHOLD_MIN) {
+                    // Нормальный интервал — всё время принадлежит текущей записи
+                    const cls = classifyRecord(records[i]);
+                    if (cls === 'normal')       minNormal  += diff;
+                    else if (cls === 'warning') minWarning += diff;
+                    else                        minOutage  += diff;
+                } else {
+                    // Разрыв: первая половина — текущая запись, вторая половина — интерполяция
+                    const half = diff / 2;
+
+                    const cls = classifyRecord(records[i]);
+                    if (cls === 'normal')       minNormal  += half;
+                    else if (cls === 'warning') minWarning += half;
+                    else                        minOutage  += half;
+
+                    // Интерполированная запись — среднее между текущей и следующей
+                    const interp = {
+                        phaseA: (records[i].phaseA + records[i + 1].phaseA) / 2,
+                        phaseB: (records[i].phaseB + records[i + 1].phaseB) / 2,
+                        phaseC: (records[i].phaseC + records[i + 1].phaseC) / 2
+                    };
+                    const clsI = classifyRecord(interp);
+                    if (clsI === 'normal')       minNormal  += half;
+                    else if (clsI === 'warning') minWarning += half;
+                    else                         minOutage  += half;
+                }
+            } else {
+                // Последняя запись: берём интервал от предыдущей
+                const prev = records[i - 1] ? new Date(records[i - 1].timestamp) : null;
+                const tail = prev ? Math.min((cur - prev) / 60000, GAP_THRESHOLD_MIN) : 5;
+                const cls = classifyRecord(records[i]);
+                if (cls === 'normal')       minNormal  += tail;
+                else if (cls === 'warning') minWarning += tail;
+                else                        minOutage  += tail;
+            }
+        }
+
+        const elNorm = document.getElementById('stat-normal');
+        const elWarn = document.getElementById('stat-warning');
+        const elOut  = document.getElementById('stat-outage');
+
+        elNorm.textContent = 'В норме: ' + fmtTime(minNormal);
+        elWarn.textContent = 'Вне допуска: ' + fmtTime(minWarning);
+        elOut.textContent  = 'Отключение: ' + fmtTime(minOutage);
+
+        // Подкрашиваем только ненулевые значения
+        elNorm.className = 'stat-item' + (minNormal  > 0 ? ' stat-normal'  : '');
+        elWarn.className = 'stat-item' + (minWarning > 0 ? ' stat-warning' : '');
+        elOut.className  = 'stat-item' + (minOutage  > 0 ? ' stat-outage'  : '');
+    }
+
+    // Единая функция фильтрации — никакого усреднения, каждая точка = реальное измерение
+    function filterHistory(from, to, timeFmt) {
+        const labels = [], dA = [], dB = [], dC = [];
+        const filtered = [];
+
+        if (timeFmt === 'time') {
+            const byHour = {};
+            voltageHistory.forEach(r => {
+                const t = new Date(r.timestamp);
+                if (t >= from && t <= to) {
+                    filtered.push(r);
+                    const h = t.getHours();
+                    if (!byHour[h]) byHour[h] = [];
+                    byHour[h].push({ phaseA: r.phaseA, phaseB: r.phaseB, phaseC: r.phaseC, min: t.getMinutes() });
+                }
+            });
+            for (let h = 0; h <= 23; h++) {
+                const recs = byHour[h];
+                if (recs && recs.length > 0) {
+                    recs.forEach(r => {
+                        labels.push(h + r.min / 60);
+                        dA.push(r.phaseA);
+                        dB.push(r.phaseB);
+                        dC.push(r.phaseC);
+                    });
+                }
+            }
+        } else {
+            voltageHistory.forEach(r => {
+                const t = new Date(r.timestamp);
+                if (t >= from && t <= to) {
+                    filtered.push(r);
+                    labels.push(t.toLocaleDateString('ru-RU', {day: '2-digit', month: '2-digit'})
+                        + ' ' + t.toLocaleTimeString('ru-RU', {hour: '2-digit', minute: '2-digit'}));
+                    dA.push(r.phaseA);
+                    dB.push(r.phaseB);
+                    dC.push(r.phaseC);
+                }
+            });
+        }
+
+        updateStats(filtered);
+        setChartData(labels, dA, dB, dC);
+    }
+
+    function updateChart() {
+        const now = new Date();
+        const xAxis = chart.options.scales.x;
+
+        if (currentPeriodKey === 'today' || currentPeriodKey === 'yesterday') {
+            xAxis.type = 'linear'; xAxis.min = 0; xAxis.max = 24;
+            xAxis.ticks = { stepSize: 1, callback: v => Number.isInteger(v) ? v : '' };
+        } else {
+            xAxis.type = 'category'; xAxis.min = undefined; xAxis.max = undefined;
+            if (currentPeriodKey === 'week') {
+                const DAY_NAMES = ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'];
+                xAxis.ticks = {
+                    maxRotation: 0,
+                    callback: function(val, idx) {
+                        const label = this.getLabelForValue(val);
+                        const day = label ? label.split(' ')[0] : '';
+                        if (DAY_NAMES.includes(day)) {
+                            const prev = idx > 0 ? this.getLabelForValue(idx - 1) : '';
+                            const prevDay = prev ? prev.split(' ')[0] : '';
+                            return day !== prevDay ? day : '';
+                        }
+                        return '';
+                    }
+                };
+            } else {
+                xAxis.ticks = { maxRotation: 0, autoSkip: true, maxTicksLimit: 15 };
+            }
+        }
+
+        if (currentPeriodKey === 'today') {
+            const from = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
+            const to   = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
+            filterHistory(from, to, 'time');
+            return;
+        }
+
+        if (currentPeriodKey === 'yesterday') {
+            const yest = new Date(now); yest.setDate(yest.getDate() - 1);
+            const from = new Date(yest.getFullYear(), yest.getMonth(), yest.getDate(), 0, 0, 0);
+            const to   = new Date(yest.getFullYear(), yest.getMonth(), yest.getDate(), 23, 59, 59);
+            filterHistory(from, to, 'time');
+            return;
+        }
+
+        if (currentPeriodKey === 'week') {
+            const dow = now.getDay();
+            const diffToMon = (dow === 0) ? 6 : dow - 1;
+            const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - diffToMon, 0, 0, 0);
+            const DAY_NAMES = ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'];
+
+            xAxis.type = 'linear'; xAxis.min = 0; xAxis.max = 7;
+            xAxis.ticks = {
+                stepSize: 1,
+                callback: v => Number.isInteger(v) && v < 7 ? DAY_NAMES[v] : ''
+            };
+
+            const dA = [], dB = [], dC = [], filtered = [];
+            voltageHistory.forEach(r => {
+                const t = new Date(r.timestamp);
+                if (t >= monday && t <= now) {
+                    filtered.push(r);
+                    const d = Math.floor((t - monday) / 86400000);
+                    const x = d + (t.getHours() * 60 + t.getMinutes()) / 1440;
+                    dA.push({x, y: r.phaseA});
+                    dB.push({x, y: r.phaseB});
+                    dC.push({x, y: r.phaseC});
+                }
+            });
+            updateStats(filtered);
+            chart.data.labels = [];
+            chart.data.datasets[0].data = dA;
+            chart.data.datasets[1].data = dB;
+            chart.data.datasets[2].data = dC;
+            chart.update();
+            return;
+        }
+
+        if (currentPeriodKey === 'month') {
+            const year = now.getFullYear(), month = now.getMonth();
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+            const monthStart = new Date(year, month, 1, 0, 0, 0);
+
+            xAxis.type = 'linear'; xAxis.min = 1; xAxis.max = daysInMonth + 1;
+            xAxis.ticks = {
+                stepSize: 1,
+                callback: v => Number.isInteger(v) && v <= daysInMonth ? v : ''
+            };
+
+            const dA = [], dB = [], dC = [], filtered = [];
+            voltageHistory.forEach(r => {
+                const t = new Date(r.timestamp);
+                if (t >= monthStart && t <= now) {
+                    filtered.push(r);
+                    const x = t.getDate() + (t.getHours() * 60 + t.getMinutes()) / 1440;
+                    dA.push({x, y: r.phaseA});
+                    dB.push({x, y: r.phaseB});
+                    dC.push({x, y: r.phaseC});
+                }
+            });
+            updateStats(filtered);
+            chart.data.labels = [];
+            chart.data.datasets[0].data = dA;
+            chart.data.datasets[1].data = dB;
+            chart.data.datasets[2].data = dC;
+            chart.update();
+            return;
+        }
+
+        if (currentPeriodKey === 'custom') {
+            const fromVal = document.getElementById('date-from').value;
+            const toVal   = document.getElementById('date-to').value;
+            if (!fromVal || !toVal) return;
+            const [fy, fm, fd] = fromVal.split('-').map(Number);
+            const [ty, tm, td] = toVal.split('-').map(Number);
+            const from = new Date(fy, fm - 1, fd, 0, 0, 0);
+            const to   = new Date(ty, tm - 1, td, 23, 59, 59);
+            filterHistory(from, to, 'datetime');
+        }
+    }
+
+    function setChartData(labels, dA, dB, dC) {
+        chart.data.labels = labels;
+        chart.data.datasets[0].data = dA;
+        chart.data.datasets[1].data = dB;
+        chart.data.datasets[2].data = dC;
+        chart.update();
+    }
+
+    function changePeriod(key, btn) {
+        currentPeriodKey = key;
+        document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        const block = document.getElementById('custom-period');
+        if (key === 'custom') {
+            block.style.display = 'flex';
+            const now = new Date();
+            const week = new Date(); week.setDate(week.getDate() - 6);
+            document.getElementById('date-to').value   = now.toISOString().split('T')[0];
+            document.getElementById('date-from').value = week.toISOString().split('T')[0];
+        } else {
+            block.style.display = 'none';
+            updateChart();
+        }
+    }
+
+    function applyCustomPeriod() {
+        updateChart();
+    }
+
+    function exportToExcel() {
+        const wb = XLSX.utils.book_new();
+        const data = [['Дата и время', 'Фаза A (В)', 'Фаза B (В)', 'Фаза C (В)']];
+        voltageHistory.forEach(r => {
+            data.push([
+                new Date(r.timestamp).toLocaleString('ru-RU'),
+                parseFloat(r.phaseA.toFixed(2)),
+                parseFloat(r.phaseB.toFixed(2)),
+                parseFloat(r.phaseC.toFixed(2))
+            ]);
+        });
+        const ws = XLSX.utils.aoa_to_sheet(data);
+        XLSX.utils.book_append_sheet(wb, ws, 'Напряжение');
+        XLSX.writeFile(wb, 'voltage_data_' + new Date().toISOString().split('T')[0] + '.xlsx');
+    }
+
+    function showError(msg) { document.getElementById('error-container').innerHTML = `<div class="error">⚠️ ${msg}</div>`; }
+    function clearError()   { document.getElementById('error-container').innerHTML = ''; }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        initChart();
+        loadData();
+        setInterval(loadData, 5 * 60 * 1000);
+    });
+</script>
+</body>
+</html>
